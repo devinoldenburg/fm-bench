@@ -176,7 +176,8 @@ export async function respond(fmBin, model, prompt, options = {}) {
     durationMs: result.durationMs,
     firstOutputMs: streamed ? result.firstStdoutMs : null,
     streamed,
-    stdoutChunks: result.stdoutChunks
+    stdoutChunks: result.stdoutChunks,
+    stdoutChunkTimesMs: streamed ? result.stdoutChunkTimesMs : []
   };
 }
 

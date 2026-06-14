@@ -50,6 +50,28 @@ const PROFILES = {
       prompt: 'Create a compact test plan for benchmarking a local foundation model across short, medium, and long prompts.'
     }
   ],
+  client: [
+    {
+      id: 'short-chat',
+      prompt: 'In one sentence, explain why time to first token matters for an interactive assistant.'
+    },
+    {
+      id: 'content-generation',
+      prompt: 'Write a practical 180-word product update for developers explaining a new terminal benchmark feature. Keep it specific and avoid marketing fluff.'
+    },
+    {
+      id: 'structured-extraction',
+      prompt: 'Return compact valid JSON with keys "risk", "owner", "deadline", and "next_step" from this note: The benchmark release is blocked by flaky p95 latency on the PCC model. Maya owns the investigation and needs a fix before Friday.'
+    },
+    {
+      id: 'summarization-light',
+      prompt: 'Summarize this in three bullets: A serious local LLM benchmark should separate time to first token from total latency, report tail percentiles, include prompt and output token counts, measure throughput at multiple concurrency operating points, and preserve the raw prompt suite so future runs are comparable.'
+    },
+    {
+      id: 'code-analysis',
+      prompt: 'Review this JavaScript function for one correctness issue and one readability improvement: function p(v){let s=0;for(let i=0;i<=v.length;i++)s+=v[i];return s/v.length}'
+    }
+  ],
   stress: [
     {
       id: 'interactive-short',

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.0
+
+- Added a live progress status line on stderr so benchmark runs no longer look stalled while models are discovered, tokens are counted, warmups run, and measured jobs complete.
+- Added `--progress` and `--no-progress` controls.
+- Added request pacing with `--request-rate <rps>` and `--ramp-up-ms <n>` so arrival rate can be controlled separately from concurrency.
+- Added prefill tokens/sec, second-chunk delay, chunk-gap statistics, total token throughput, and explicit zero goodput RPS when SLOs are missed.
+- Added a `client` prompt profile for a broader local-machine workload covering short chat, content generation, structured extraction, summarization, and code analysis.
+- Updated terminal tables, CSV exports, JSON payloads, README, and methodology docs for the new metrics.
+
 ## 0.3.1
 
 - Added semantic ANSI colors for terminal tables and compact reports.

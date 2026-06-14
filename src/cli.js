@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { inspectModels, runBenchmark } from './bench.js';
 import { runProcess } from './process.js';
+import { createProgress } from './progress.js';
 import { flattenResults, toCsv, writeReport } from './report.js';
 import { renderBenchmarkReport, renderModelsTable } from './table.js';
 
@@ -36,10 +37,21 @@ export async function runCli(argv = process.argv.slice(2)) {
     return;
   }
 
-  const payload = await runBenchmark({
-    ...parsed,
-    version: packageJson.version
+  const progress = createProgress({
+    ...renderOptions(parsed),
+    enabled: resolveProgress(parsed),
+    stream: process.stderr
   });
+  let payload;
+  try {
+    payload = await runBenchmark({
+      ...parsed,
+      version: packageJson.version,
+      onProgress: (event) => progress.update(event)
+    });
+  } finally {
+    progress.stop();
+  }
 
   if (parsed.format === 'json') {
     console.log(JSON.stringify(payload, null, 2));
@@ -71,6 +83,8 @@ export function parseArgs(argv) {
     warmup: 0,
     concurrency: 1,
     sweepConcurrency: [],
+    requestRate: null,
+    rampUpMs: 0,
     timeoutMs: 60_000,
     profile: 'standard',
     greedy: true,
@@ -85,6 +99,7 @@ export function parseArgs(argv) {
     verbose: false,
     ascii: false,
     color: 'auto',
+    progress: 'auto',
     compact: false,
     width: null
   };
@@ -130,6 +145,12 @@ export function parseArgs(argv) {
         if (options.sweepConcurrency.length > 0) {
           options.concurrency = options.sweepConcurrency[0];
         }
+        break;
+      case '--request-rate':
+        options.requestRate = parsePositiveNumber(requireValue(arg, args), arg);
+        break;
+      case '--ramp-up-ms':
+        options.rampUpMs = parseNonNegativeInt(requireValue(arg, args), arg);
         break;
       case '--timeout':
       case '--timeout-ms':
@@ -199,6 +220,12 @@ export function parseArgs(argv) {
         break;
       case '--no-color':
         options.color = 'never';
+        break;
+      case '--progress':
+        options.progress = 'always';
+        break;
+      case '--no-progress':
+        options.progress = 'never';
         break;
       case '--compact':
         options.compact = true;
@@ -279,6 +306,12 @@ function parsePositiveInt(value, option) {
   return parsed;
 }
 
+function parsePositiveNumber(value, option) {
+  const parsed = Number.parseFloat(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) throw new Error(`${option} must be a positive number`);
+  return parsed;
+}
+
 function parseNonNegativeInt(value, option) {
   const parsed = Number.parseInt(value, 10);
   if (!Number.isInteger(parsed) || parsed < 0) throw new Error(`${option} must be a non-negative integer`);
@@ -312,6 +345,12 @@ function resolveColor(value) {
   return Boolean(process.stdout.isTTY);
 }
 
+function resolveProgress(parsed) {
+  if (parsed.progress === 'always') return true;
+  if (parsed.progress === 'never') return false;
+  return parsed.format === 'table' ? 'auto' : false;
+}
+
 function helpText() {
   return `fm-bench ${packageJson.version}
 
@@ -329,13 +368,15 @@ Run options:
   -c, --concurrency <n>     Parallel fm processes (default: 1)
       --sweep-concurrency <list>
                             Run separate operating points, e.g. 1,2,4
+      --request-rate <rps>  Pace request starts at a target requests/sec
+      --ramp-up-ms <n>      Gradually ramp request pacing over n ms
       --timeout-ms <n>      Timeout per fm call in ms (default: 60000)
       --slo-ttft-ms <n>     Count request as good only if TTFT is <= n
       --slo-e2e-ms <n>      Count request as good only if E2E latency is <= n
       --slo-tpot-ms <n>     Count request as good only if TPOT is <= n
   -p, --prompt <text>       Prompt to benchmark; repeatable
       --prompt-file <file>  .json, .jsonl, or blank-line separated text prompts
-      --profile <name>      quick, standard, interactive, throughput, or stress
+      --profile <name>      quick, standard, interactive, throughput, client, or stress
   -i, --instructions <text> Instructions passed to fm respond
       --use-case <case>     Pass a system model use case through to fm
       --guardrails <level>  Pass a system model guardrail level through to fm
@@ -354,6 +395,8 @@ Output:
       --ascii               Use plain ASCII tables instead of Unicode
       --color               Force ANSI colors in table output
       --no-color            Disable ANSI colors in table output
+      --progress            Force live progress on stderr
+      --no-progress         Disable live progress on stderr
       --compact             Force compact terminal layout
       --width <n>           Render for a specific terminal width
   -o, --out <file>          Save JSON or CSV report based on file extension
@@ -367,6 +410,7 @@ Environment:
 Examples:
   fm-bench
   fm-bench --models system,pcc --runs 3 --profile stress
+  fm-bench --profile client --sweep-concurrency 1,2 --request-rate 0.5
   fm-bench --prompt "Reply with exactly: ok" --json --out bench.json
   fm-bench models
   fm-bench doctor

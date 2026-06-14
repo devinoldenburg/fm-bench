@@ -36,9 +36,12 @@ test('summarizeByModel computes streaming and throughput metrics', () => {
       outputTokens: 9,
       tokensPerSecond: 9,
       decodeTokensPerSecond: 10,
+      prefillTokensPerSecond: 100,
       charsPerSecond: 90,
       startOffsetMs: 0,
       endOffsetMs: 1000,
+      secondChunkMs: 50,
+      chunkGapsMs: [50, 70],
       outputHash: 'a',
       good: true
     },
@@ -54,9 +57,12 @@ test('summarizeByModel computes streaming and throughput metrics', () => {
       outputTokens: 9,
       tokensPerSecond: 7.5,
       decodeTokensPerSecond: 8.9,
+      prefillTokensPerSecond: 66.67,
       charsPerSecond: 70,
       startOffsetMs: 1000,
       endOffsetMs: 2200,
+      secondChunkMs: 80,
+      chunkGapsMs: [80, 120],
       outputHash: 'a',
       good: false
     }
@@ -67,6 +73,11 @@ test('summarizeByModel computes streaming and throughput metrics', () => {
   assert.equal(summary[0].successes, 2);
   assert.equal(summary[0].ttft.p50, 250);
   assert.equal(summary[0].outputTokenThroughput, 18 / 2.2);
+  assert.equal(summary[0].totalTokenThroughput, 58 / 2.2);
+  assert.equal(summary[0].goodputRps, 1 / 2.2);
+  assert.equal(summary[0].secondChunk.p50, 65);
+  assert.ok(Math.abs(summary[0].chunkGap.p95 - 114) < 0.0001);
+  assert.ok(Math.abs(summary[0].prefillTokensPerSecond.avg - 83.335) < 0.0001);
   assert.equal(summary[0].repeatability, 1);
   assert.equal(summary[0].goodputRate, 0.5);
 });

@@ -93,6 +93,7 @@ export function renderSummaryTable(summary, options = {}) {
       cell(item.attempted ? `${item.successes}/${item.attempted}` : '-', item.failures > 0 ? 'yellow' : item.available ? 'green' : 'muted'),
       cell(formatPercent(item.successRate), percentTone(item.successRate, 0.95, 1)),
       cell(formatPercent(item.goodputRate), percentTone(item.goodputRate, 0.8, 1)),
+      cell(formatNumber(item.goodputRps), tones.goodputRps),
       cell(formatMs(item.ttft.p50), tones.ttft),
       cell(formatMs(item.ttft.p95), tones.ttftP95),
       cell(formatMs(item.latency.p50), tones.e2e),
@@ -111,34 +112,34 @@ export function renderSummaryTable(summary, options = {}) {
         base[2],
         base[3]
       ];
-      if (hasGoodput) medium.push(base[5]);
-      medium.push(base[6], base[8], base[9], base[10], base[11], base[13], base[14]);
+      if (hasGoodput) medium.push(base[5], base[6]);
+      medium.push(base[7], base[9], base[10], base[11], base[12], base[14], base[15]);
       return medium;
     }
 
     const wide = [base[0], base[1], base[2], base[3], base[4]];
-    if (hasGoodput) wide.push(base[5]);
+    if (hasGoodput) wide.push(base[5], base[6]);
     wide.push(
-      base[6],
       base[7],
       base[8],
       base[9],
+      base[10],
       cell(formatMs(item.tpot.p50), tones.tpot),
       cell(formatMs(item.tpot.p95), tones.tpotP95),
-      base[10],
       base[11],
       base[12],
       base[13],
-      base[14]
+      base[14],
+      base[15]
     );
     return wide;
   });
 
-  const mediumHeaders = ['c', 'model', 'status', 'ok', 'good', 'ttft', 'e2e', 'e2e p95', 'user/s', 'sys/s', 'cv', 'note'];
-  const wideHeaders = ['c', 'model', 'status', 'ok/runs', 'succ', 'good', 'ttft', 'ttft p95', 'e2e', 'e2e p95', 'tpot', 'tpot p95', 'user t/s', 'sys t/s', 'rps', 'cv', 'note'];
+  const mediumHeaders = ['c', 'model', 'status', 'ok', 'good', 'good rps', 'ttft', 'e2e', 'e2e p95', 'user/s', 'sys/s', 'cv', 'note'];
+  const wideHeaders = ['c', 'model', 'status', 'ok/runs', 'succ', 'good', 'good rps', 'ttft', 'ttft p95', 'e2e', 'e2e p95', 'tpot', 'tpot p95', 'user t/s', 'sys t/s', 'rps', 'cv', 'note'];
   const headers = mode === 'medium'
-    ? (hasGoodput ? mediumHeaders : mediumHeaders.filter((header) => header !== 'good'))
-    : (hasGoodput ? wideHeaders : wideHeaders.filter((header) => header !== 'good'));
+    ? (hasGoodput ? mediumHeaders : mediumHeaders.filter((header) => header !== 'good' && header !== 'good rps'))
+    : (hasGoodput ? wideHeaders : wideHeaders.filter((header) => header !== 'good' && header !== 'good rps'));
 
   return renderTable(headers, rows, { ...options, maxCellWidth: mode === 'medium' ? 24 : 52 });
 }
@@ -153,7 +154,10 @@ export function renderDetailTable(summary, options = {}) {
       cell(item.model, item.available ? null : 'muted'),
       cell(formatNumber(item.promptTokens.avg, 0)),
       cell(formatNumber(item.outputTokens.avg, 0)),
-      cell(formatNumber(item.decodeTokensPerSecond.avg), tones.decodeTps),
+      cell(formatNumber(item.prefillTokensPerSecond?.avg), tones.prefillTps),
+      cell(formatNumber(item.decodeTokensPerSecond?.avg), tones.decodeTps),
+      cell(formatMs(item.secondChunk?.p50), tones.secondChunk),
+      cell(formatMs(item.chunkGap?.p95), tones.chunkGapP95),
       cell(formatMs(item.latency.p99), tones.e2eP99),
       cell(formatRangeMs(item.latency.ci95Low, item.latency.ci95High), cvTone(item.latency.cv)),
       cell(formatPercent(item.repeatability), percentTone(item.repeatability, 0.5, 0.9)),
@@ -161,20 +165,23 @@ export function renderDetailTable(summary, options = {}) {
     ];
 
     if (mode === 'medium') {
-      return base.slice(0, 8);
+      return [base[0], base[1], base[2], base[3], base[4], base[5], base[7], base[8], base[10]];
     }
 
     return base;
   });
 
   const headers = mode === 'medium'
-    ? ['c', 'model', 'in avg', 'out avg', 'decode t/s', 'e2e p99', 'e2e 95% ci', 'repeat']
+    ? ['c', 'model', 'in avg', 'out avg', 'prefill/s', 'decode/s', 'chunk p95', 'e2e p99', 'repeat']
     : [
       'c',
       'model',
       'in tok avg',
       'out tok avg',
+      'prefill tok/s',
       'decode tok/s',
+      '2nd chunk',
+      'chunk p95',
       'e2e p99',
       'e2e 95% ci',
       'repeat',
@@ -200,7 +207,8 @@ export function renderCompactSummary(summary, options = {}) {
       const tones = metricTones(item, ranks, options.slo);
       lines.push(toneText(truncate(`  TTFT ${formatMs(item.ttft.p50)} p95 ${formatMs(item.ttft.p95)} | E2E ${formatMs(item.latency.p50)} p95 ${formatMs(item.latency.p95)} p99 ${formatMs(item.latency.p99)}`, width), worstTone(tones.ttft, tones.e2e, tones.e2eP95), options));
       lines.push(toneText(truncate(`  user ${formatNumber(item.tokensPerSecond.avg)} tok/s | system ${formatNumber(item.outputTokenThroughput)} tok/s | RPS ${formatNumber(item.rps)} | CV ${formatPercent(item.latency.cv)}${goodput}`, width), worstTone(tones.userTps, tones.systemTps, cvTone(item.latency.cv), percentTone(item.goodputRate, 0.8, 1)), options));
-      lines.push(toneText(truncate(`  in/out ${formatNumber(item.promptTokens.avg, 0)}/${formatNumber(item.outputTokens.avg, 0)} tok avg | TPOT ${formatMs(item.tpot.p50)} | repeat ${formatPercent(item.repeatability)}`, width), worstTone(tones.tpot, percentTone(item.repeatability, 0.5, 0.9)), options));
+      lines.push(toneText(truncate(`  prefill ${formatNumber(item.prefillTokensPerSecond?.avg)} tok/s | TPOT ${formatMs(item.tpot.p50)} | chunk p95 ${formatMs(item.chunkGap?.p95)}`, width), worstTone(tones.prefillTps, tones.tpot, tones.chunkGapP95), options));
+      lines.push(toneText(truncate(`  in/out ${formatNumber(item.promptTokens.avg, 0)}/${formatNumber(item.outputTokens.avg, 0)} tok avg | repeat ${formatPercent(item.repeatability)}`, width), percentTone(item.repeatability, 0.5, 0.9), options));
     } else {
       lines.push(toneText(truncate(`  ${compactReason(item.skippedReason)}`, width), 'yellow', options));
     }
@@ -396,10 +404,15 @@ function rankSummary(summary) {
     e2eP99: collectMetric(summary, (item) => item.latency?.p99),
     tpot: collectMetric(summary, (item) => item.tpot?.p50),
     tpotP95: collectMetric(summary, (item) => item.tpot?.p95),
+    secondChunk: collectMetric(summary, (item) => item.secondChunk?.p50),
+    chunkGapP95: collectMetric(summary, (item) => item.chunkGap?.p95),
     userTps: collectMetric(summary, (item) => item.tokensPerSecond?.avg),
     systemTps: collectMetric(summary, (item) => item.outputTokenThroughput),
+    totalTps: collectMetric(summary, (item) => item.totalTokenThroughput),
     rps: collectMetric(summary, (item) => item.rps),
-    decodeTps: collectMetric(summary, (item) => item.decodeTokensPerSecond?.avg)
+    goodputRps: collectMetric(summary, (item) => item.goodputRps),
+    decodeTps: collectMetric(summary, (item) => item.decodeTokensPerSecond?.avg),
+    prefillTps: collectMetric(summary, (item) => item.prefillTokensPerSecond?.avg)
   };
 }
 
@@ -440,10 +453,15 @@ function metricTones(item, ranks, slo = {}) {
     e2eP99: thresholdTone(item.latency?.p99, slo.e2eMs) || rankToneLower(item.latency?.p99, ranks.e2eP99),
     tpot: thresholdTone(item.tpot?.p50, slo.tpotMs) || rankToneLower(item.tpot?.p50, ranks.tpot),
     tpotP95: thresholdTone(item.tpot?.p95, slo.tpotMs) || rankToneLower(item.tpot?.p95, ranks.tpotP95),
+    secondChunk: rankToneLower(item.secondChunk?.p50, ranks.secondChunk),
+    chunkGapP95: rankToneLower(item.chunkGap?.p95, ranks.chunkGapP95),
     userTps: rankTone(item.tokensPerSecond?.avg, ranks.userTps),
     systemTps: rankTone(item.outputTokenThroughput, ranks.systemTps),
+    totalTps: rankTone(item.totalTokenThroughput, ranks.totalTps),
     rps: rankTone(item.rps, ranks.rps),
-    decodeTps: rankTone(item.decodeTokensPerSecond?.avg, ranks.decodeTps)
+    goodputRps: goodputRpsTone(item, ranks.goodputRps),
+    decodeTps: rankTone(item.decodeTokensPerSecond?.avg, ranks.decodeTps),
+    prefillTps: rankTone(item.prefillTokensPerSecond?.avg, ranks.prefillTps)
   };
 }
 
@@ -452,4 +470,10 @@ function worstTone(...tones) {
   if (tones.includes('yellow')) return 'yellow';
   if (tones.includes('green')) return 'green';
   return null;
+}
+
+function goodputRpsTone(item, values) {
+  const passTone = percentTone(item.goodputRate, 0.8, 1);
+  if (passTone && passTone !== 'green') return passTone;
+  return rankTone(item.goodputRps, values) || passTone;
 }

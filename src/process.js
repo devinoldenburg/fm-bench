@@ -20,6 +20,7 @@ export function runProcess(command, args = [], options = {}) {
     let stderr = '';
     let stdoutChunks = 0;
     let stderrChunks = 0;
+    const stdoutChunkTimesMs = [];
     let firstStdoutMs = null;
     let firstStderrMs = null;
     let timedOut = false;
@@ -38,10 +39,12 @@ export function runProcess(command, args = [], options = {}) {
     child.stdout.setEncoding('utf8');
     child.stderr.setEncoding('utf8');
     child.stdout.on('data', (chunk) => {
+      const chunkAtMs = Number(process.hrtime.bigint() - startedAt) / 1e6;
       stdoutChunks += 1;
       if (firstStdoutMs == null && chunk.length > 0) {
-        firstStdoutMs = Number(process.hrtime.bigint() - startedAt) / 1e6;
+        firstStdoutMs = chunkAtMs;
       }
+      if (chunk.length > 0) stdoutChunkTimesMs.push(chunkAtMs);
       stdout += chunk;
     });
     child.stderr.on('data', (chunk) => {
@@ -65,6 +68,7 @@ export function runProcess(command, args = [], options = {}) {
         stderr: stderr || error.message,
         stdoutChunks,
         stderrChunks,
+        stdoutChunkTimesMs,
         firstStdoutMs,
         firstStderrMs,
         error,
@@ -86,6 +90,7 @@ export function runProcess(command, args = [], options = {}) {
         stderr,
         stdoutChunks,
         stderrChunks,
+        stdoutChunkTimesMs,
         firstStdoutMs,
         firstStderrMs,
         timedOut,

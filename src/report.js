@@ -27,9 +27,13 @@ export function flattenResults(results) {
     words: result.words,
     tokens_per_second: result.tokensPerSecond == null ? '' : round(result.tokensPerSecond),
     decode_tokens_per_second: result.decodeTokensPerSecond == null ? '' : round(result.decodeTokensPerSecond),
+    prefill_tokens_per_second: result.prefillTokensPerSecond == null ? '' : round(result.prefillTokensPerSecond),
     chars_per_second: round(result.charsPerSecond),
     streamed: result.streamed,
     stdout_chunks: result.stdoutChunks,
+    second_chunk_ms: round(result.secondChunkMs),
+    chunk_gap_avg_ms: round(result.chunkGapAvgMs),
+    chunk_gap_max_ms: round(result.chunkGapMaxMs),
     output_hash: result.outputHash || '',
     good: result.good == null ? '' : result.good,
     error: result.error || ''

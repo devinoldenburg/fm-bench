@@ -101,10 +101,15 @@ export function summarizeByModel(results, modelStatuses = [], options = {}) {
     const charsPerSecond = summarizeNumbers(successes.map((result) => result.charsPerSecond));
     const tokensPerSecond = summarizeNumbers(successes.map((result) => result.tokensPerSecond).filter((value) => value != null));
     const decodeTokensPerSecond = summarizeNumbers(successes.map((result) => result.decodeTokensPerSecond).filter((value) => value != null));
+    const prefillTokensPerSecond = summarizeNumbers(successes.map((result) => result.prefillTokensPerSecond).filter((value) => value != null));
+    const secondChunk = summarizeNumbers(successes.map((result) => result.secondChunkMs).filter((value) => value != null));
+    const chunkGap = summarizeNumbers(successes.flatMap((result) => result.chunkGapsMs || []));
     const windowMs = modelWindowMs(successes);
     const rps = successes.length > 0 && windowMs > 0 ? successes.length / (windowMs / 1000) : null;
-    const goodputRps = goodResults.length > 0 && windowMs > 0 ? goodResults.length / (windowMs / 1000) : null;
+    const goodputRps = goodMeasured.length > 0 && windowMs > 0 ? goodResults.length / (windowMs / 1000) : null;
     const outputTokenThroughput = outputTokens.sum > 0 && windowMs > 0 ? outputTokens.sum / (windowMs / 1000) : null;
+    const totalTokens = promptTokens.sum + outputTokens.sum;
+    const totalTokenThroughput = totalTokens > 0 && windowMs > 0 ? totalTokens / (windowMs / 1000) : null;
 
     return {
       model: entry.model,
@@ -120,6 +125,7 @@ export function summarizeByModel(results, modelStatuses = [], options = {}) {
       rps,
       goodputRps,
       outputTokenThroughput,
+      totalTokenThroughput,
       repeatability: summarizeRepeatability(successes),
       latency,
       ttft,
@@ -129,7 +135,10 @@ export function summarizeByModel(results, modelStatuses = [], options = {}) {
       outputTokens,
       charsPerSecond,
       tokensPerSecond,
-      decodeTokensPerSecond
+      decodeTokensPerSecond,
+      prefillTokensPerSecond,
+      secondChunk,
+      chunkGap
     };
   });
 }

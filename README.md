@@ -2,7 +2,7 @@
 
 `fm-bench` is a dynamic benchmark CLI for Apple's `fm` command on macOS 27 and newer.
 
-It discovers the models reported by `fm --help`, checks availability with `fm available`, runs repeatable prompt suites through `fm respond`, counts tokens with `fm token-count`, and prints a terminal table with latency and throughput stats.
+It discovers the models reported by `fm --help`, checks availability with `fm available`, runs repeatable prompt suites through `fm respond`, counts tokens with `fm token-count`, shows live progress while it works, and prints terminal tables with latency, throughput, stability, goodput, and streaming-quality stats.
 
 Apple introduced the preinstalled `fm` command for macOS 27 as part of the Foundation Models tooling. `fm-bench` intentionally shells out to the system `fm` binary instead of linking private APIs, so it can adapt as Apple adds models or changes availability.
 
@@ -35,20 +35,15 @@ fm-bench
 Example output:
 
 ```text
-fm-bench 0.2.0 | darwin/arm64 | fm
-prompts 3 | runs 1 | concurrency 1 | stream on | measured 3 | failed 0 | skipped models 0 | elapsed 11.36s
+fm-bench 0.4.0 | darwin/arm64 | fm
+prompts 5 | runs 3 | concurrency 1,2 | stream on | measured 30 | failed 0 | skipped 0 | elapsed 42.10s | SLO TTFT<=750ms,E2E<=4.00s
 
-┌────────┬────────┬──────┬────┬─────────┬──────────┬──────────┬─────────┬─────────┬──────────┬───────┬─────┬──────┐
-│ MODEL  │ STATUS │ RUNS │ OK │ SUCCESS │ TTFT P50 │ TTFT P95 │ E2E P50 │ E2E P95 │ TPOT P50 │ TOK/S │ RPS │ NOTE │
-├────────┼────────┼──────┼────┼─────────┼──────────┼──────────┼─────────┼─────────┼──────────┼───────┼─────┼──────┤
-│ system │ ok     │    3 │  3 │    100% │    409ms │    486ms │   2.29s │   5.97s │     14ms │  58.5 │ 0.3 │      │
-└────────┴────────┴──────┴────┴─────────┴──────────┴──────────┴─────────┴─────────┴──────────┴───────┴─────┴──────┘
-
-┌────────┬────────────┬─────────────┬─────────────┬──────────────┬─────────┬──────────┬────────┬──────────────────────────────────┐
-│ MODEL  │ IN TOK AVG │ OUT TOK AVG │ TOTAL TOK/S │ DECODE TOK/S │ E2E P99 │ TPOT P95 │ REPEAT │ DESCRIPTION                      │
-├────────┼────────────┼─────────────┼─────────────┼──────────────┼─────────┼──────────┼────────┼──────────────────────────────────┤
-│ system │         35 │         196 │        59.5 │         75.0 │   6.30s │     15ms │      - │ On-device Apple Foundation Model │
-└────────┴────────────┴─────────────┴─────────────┴──────────────┴─────────┴──────────┴────────┴──────────────────────────────────┘
+┌───┬────────┬────────┬─────────┬──────┬──────┬──────────┬──────┬──────────┬─────┬─────┐
+│ C │ MODEL  │ STATUS │ OK/RUNS │ SUCC │ GOOD │ GOOD RPS │ TTFT │ E2E P95  │ SYS │ CV  │
+├───┼────────┼────────┼─────────┼──────┼──────┼──────────┼──────┼──────────┼─────┼─────┤
+│ 1 │ system │ ok     │   15/15 │ 100% │  93% │      0.4 │ 318ms│    3.20s │  42 │ 12% │
+│ 2 │ system │ ok     │   15/15 │ 100% │  80% │      0.7 │ 501ms│    4.40s │  68 │ 21% │
+└───┴────────┴────────┴─────────┴──────┴──────┴──────────┴──────┴──────────┴─────┴─────┘
 ```
 
 ## Commands
@@ -72,6 +67,7 @@ fm-bench --models system,pcc --runs 3 --profile stress
 fm-bench --models system --runs 5 --profile interactive
 fm-bench --models system --runs 3 --profile throughput --warmup 1
 fm-bench --models system --profile interactive --sweep-concurrency 1,2,4
+fm-bench --profile client --sweep-concurrency 1,2 --request-rate 0.5 --ramp-up-ms 2000
 fm-bench --models system --runs 5 --slo-ttft-ms 750 --slo-e2e-ms 4000
 fm-bench --prompt "Reply with exactly: ok" --runs 5
 fm-bench --prompt-file prompts.json --format json --out reports/bench.json
@@ -85,9 +81,11 @@ Useful flags:
 - `--warmup <n>`: warmup runs per model before measurement.
 - `--concurrency <n>`: parallel `fm` processes.
 - `--sweep-concurrency <list>`: run separate measured operating points, such as `1,2,4`.
+- `--request-rate <rps>`: pace request starts at a target requests-per-second rate.
+- `--ramp-up-ms <n>`: gradually ramp request pacing over `n` milliseconds.
 - `--timeout-ms <n>`: timeout per `fm` call.
 - `--slo-ttft-ms <n>`, `--slo-e2e-ms <n>`, `--slo-tpot-ms <n>`: count goodput against latency budgets.
-- `--profile quick|standard|interactive|throughput|stress`: built-in prompt suite.
+- `--profile quick|standard|interactive|throughput|client|stress`: built-in prompt suite.
 - `--prompt <text>`: custom prompt, repeatable.
 - `--prompt-file <file>`: JSON, JSONL, or blank-line separated text prompts.
 - `--instructions <text>`: passed to `fm respond`.
@@ -96,6 +94,7 @@ Useful flags:
 - `--json`, `--csv`, `--format table|json|csv`: choose output format.
 - `--ascii`: use plain ASCII table borders.
 - `--color`, `--no-color`: force or disable semantic ANSI colors. Colors are automatic on TTYs.
+- `--progress`, `--no-progress`: force or disable the live progress status line on stderr.
 - `--compact`: force the narrow terminal layout.
 - `--width <n>`: render as if the terminal has `n` columns.
 - `--out <file>`: save a report.
@@ -127,8 +126,11 @@ Plain text files are split on blank lines.
 - TTFT, or time to first streamed output.
 - E2E latency, or full response wall-clock latency.
 - TPOT, or decode time per output token after the first output token.
+- second-chunk delay and chunk-gap p95 as terminal-side streaming smoothness signals.
+- prefill tokens per second, or prompt tokens divided by TTFT.
 - output tokens per second per request.
 - total output token throughput across the measured window.
+- total token throughput, including prompt and output tokens.
 - requests per second across the measured window.
 - goodput percentage and goodput RPS when SLO flags are set.
 - coefficient of variation (CV) and confidence interval context for stability.
@@ -140,9 +142,15 @@ Plain text files are split on blank lines.
 
 Token counts come from `fm token-count --quiet`. If `fm` cannot count a response, token fields are left blank while character throughput is still reported.
 
-Measured runs stream by default so `fm-bench` can capture TTFT. Use `--no-stream` if you need buffered `fm respond` behavior; TTFT and TPOT fields that depend on streaming will be blank.
+Measured runs stream by default so `fm-bench` can capture TTFT and streaming smoothness. Use `--no-stream` if you need buffered `fm respond` behavior; TTFT, TPOT, second-chunk, and chunk-gap fields that depend on streaming will be blank.
 
 Terminal output is responsive. Wide terminals show full scoreboard and detail tables, medium terminals show a tighter operating-point table, and narrow terminals switch to compact model cards. Use `--width` to preview a layout and `--ascii` for log systems that do not render Unicode borders well.
+
+## Live Progress
+
+Interactive terminal runs show a single-line status indicator on stderr while prompts are loaded, models are inspected, tokens are counted, warmups run, and benchmark jobs complete. The final report still prints to stdout, so `--json`, `--csv`, and `--out` remain automation-friendly.
+
+Progress is automatic for table output on TTYs. Use `--progress` to force it or `--no-progress` to keep the terminal completely quiet until the report is ready.
 
 ## Terminal Colors
 

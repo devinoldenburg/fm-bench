@@ -18,9 +18,10 @@ test('parseArgs defaults to run command and table output', () => {
 });
 
 test('parseArgs supports terminal rendering and stream flags', () => {
-  const args = parseArgs(['--ascii', '--color', '--compact', '--width', '72', '--no-stream']);
+  const args = parseArgs(['--ascii', '--color', '--progress', '--compact', '--width', '72', '--no-stream']);
   assert.equal(args.ascii, true);
   assert.equal(args.color, 'always');
+  assert.equal(args.progress, 'always');
   assert.equal(args.compact, true);
   assert.equal(args.width, 72);
   assert.equal(args.stream, false);
@@ -32,7 +33,14 @@ test('parseArgs supports disabling colors', () => {
 });
 
 test('parseArgs supports concurrency sweeps', () => {
-  const args = parseArgs(['--sweep-concurrency', '1,2,4']);
+  const args = parseArgs(['--sweep-concurrency', '1,2,4', '--request-rate', '0.5', '--ramp-up-ms', '1000']);
   assert.deepEqual(args.sweepConcurrency, [1, 2, 4]);
   assert.equal(args.concurrency, 1);
+  assert.equal(args.requestRate, 0.5);
+  assert.equal(args.rampUpMs, 1000);
+});
+
+test('parseArgs supports disabling progress', () => {
+  const args = parseArgs(['--no-progress']);
+  assert.equal(args.progress, 'never');
 });
