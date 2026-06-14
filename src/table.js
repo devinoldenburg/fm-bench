@@ -109,16 +109,10 @@ export function renderLegend(options = {}) {
   ]);
 
   if (options.compact || width < 88) {
-    return legendEntries().map((item) => {
-      const suffix = item.rule ? ` Rule: ${item.rule}` : '';
-      return truncate(`${item.table.toUpperCase()} ${item.column}: ${item.definition}${suffix}`, width);
-    }).join('\n');
+    return renderCompactLegend(width);
   }
 
-  return renderTable(['table', 'column', 'definition', 'rule'], rows, {
-    ...options,
-    maxCellWidth: Math.max(20, Math.floor((width - 48) / 2))
-  });
+  return renderWrappedTable(['table', 'column', 'definition', 'rule'], rows, legendColumnWidths(width), options);
 }
 
 export function formatMs(value) {
@@ -358,6 +352,26 @@ function rule(left, join, right, horizontal, widths) {
   return `${left}${widths.map((width) => horizontal.repeat(width + 2)).join(join)}${right}`;
 }
 
+function renderWrappedTable(headers, rows, widths, options = {}) {
+  const ascii = Boolean(options.ascii);
+  const style = ascii ? ASCII_TABLE : UNICODE_TABLE;
+  const top = rule(style.topLeft, style.topJoin, style.topRight, style.horizontal, widths);
+  const middle = rule(style.midLeft, style.midJoin, style.midRight, style.horizontal, widths);
+  const bottom = rule(style.bottomLeft, style.bottomJoin, style.bottomRight, style.horizontal, widths);
+  const headerLine = rowLine(headers.map((header) => truncate(header, widths[headers.indexOf(header)])), widths, style, true, options);
+  const bodyLines = [];
+
+  for (const row of rows) {
+    const wrappedCells = row.map((value, index) => wrapText(formatCell(value), widths[index]));
+    const height = Math.max(...wrappedCells.map((lines) => lines.length));
+    for (let lineIndex = 0; lineIndex < height; lineIndex += 1) {
+      bodyLines.push(rowLine(wrappedCells.map((lines) => lines[lineIndex] ?? ''), widths, style, false, options));
+    }
+  }
+
+  return [top, headerLine, middle, ...bodyLines, bottom].join('\n');
+}
+
 function rowLine(row, widths, style, header = false, options = {}) {
   return `${style.vertical}${row.map((cell, index) => {
     const normalized = header ? { text: String(cell).toUpperCase(), tone: 'header' } : normalizeCell(cell);
@@ -407,6 +421,63 @@ function compactReason(value) {
   const clean = String(value || '').replace(/\s+/g, ' ').trim();
   if (clean.length <= 58) return clean;
   return `${clean.slice(0, 55)}...`;
+}
+
+function renderCompactLegend(width) {
+  const lines = [];
+  for (const item of legendEntries()) {
+    lines.push(...wrapText(`${item.table.toUpperCase()} ${item.column}`, width));
+    lines.push(...wrapText(`  Definition: ${item.definition}`, width));
+    if (item.rule) {
+      lines.push(...wrapText(`  Rule: ${item.rule}`, width));
+    }
+    lines.push('');
+  }
+  if (lines.at(-1) === '') lines.pop();
+  return lines.join('\n');
+}
+
+function legendColumnWidths(width) {
+  const available = Math.max(40, width - 13);
+  const tableWidth = 7;
+  const columnWidth = Math.min(25, Math.max(18, Math.floor(available * 0.28)));
+  const remaining = Math.max(36, available - tableWidth - columnWidth);
+  const definitionWidth = Math.max(18, Math.floor(remaining * 0.52));
+  const ruleWidth = Math.max(18, remaining - definitionWidth);
+  return [tableWidth, columnWidth, definitionWidth, ruleWidth];
+}
+
+function wrapText(value, width) {
+  const text = String(value ?? '').replace(/\s+/g, ' ').trim();
+  if (!text) return [''];
+  if (width <= 1) return [text];
+
+  const lines = [];
+  let current = '';
+  for (const rawWord of text.split(' ')) {
+    const pieces = splitLongWord(rawWord, width);
+    for (const word of pieces) {
+      if (!current) {
+        current = word;
+      } else if (visibleLength(`${current} ${word}`) <= width) {
+        current = `${current} ${word}`;
+      } else {
+        lines.push(current);
+        current = word;
+      }
+    }
+  }
+  if (current) lines.push(current);
+  return lines.length ? lines : [''];
+}
+
+function splitLongWord(word, width) {
+  if (visibleLength(word) <= width) return [word];
+  const pieces = [];
+  for (let index = 0; index < word.length; index += width) {
+    pieces.push(word.slice(index, index + width));
+  }
+  return pieces;
 }
 
 function truncate(value, width) {

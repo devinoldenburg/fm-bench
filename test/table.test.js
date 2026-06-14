@@ -66,11 +66,19 @@ test('renderBenchmarkReport omits metric legend', () => {
 });
 
 test('renderLegend explains table columns and CV thresholds', () => {
-  const report = renderLegend({ width: 160, ascii: true });
+  const report = renderLegend({ width: 100, ascii: true });
   assert.match(report, /TTFT/);
   assert.match(report, /GOOD RPS/);
   assert.match(report, /CV/);
-  assert.match(report, /green <=10%, yellow <=25%, red >25%/i);
+  const normalized = stripAnsi(report).replace(/[|\n]/g, ' ').replace(/\s+/g, ' ');
+  assert.match(normalized, /Lower is steadier\. Green/i);
+  assert.match(normalized, /<=10%, yellow <=25%, red/i);
+  assert.match(normalized, />25%/);
+  assert.equal(legendEntries().find((item) => item.column === 'CV').rule, 'Lower is steadier. Green <=10%, yellow <=25%, red >25%.');
+  assert.doesNotMatch(report, /…/);
+  for (const line of report.split('\n')) {
+    assert.ok(stripAnsi(line).length <= 100);
+  }
 });
 
 test('legendEntries include every table section', () => {
@@ -79,6 +87,16 @@ test('legendEntries include every table section', () => {
   assert.ok(sections.has('detail'));
   assert.ok(sections.has('models'));
   assert.ok(sections.has('colors'));
+});
+
+test('renderLegend compact layout wraps without truncating', () => {
+  const report = renderLegend({ width: 50, ascii: true, compact: true });
+  assert.match(report, /Definition: Coefficient of variation/);
+  assert.match(report, /Rule: Lower is steadier/);
+  assert.doesNotMatch(report, /…/);
+  for (const line of report.split('\n')) {
+    assert.ok(stripAnsi(line).length <= 50);
+  }
 });
 
 test('renderBenchmarkReport colors cells without changing visible width', () => {

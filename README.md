@@ -161,6 +161,8 @@ fm-bench legend --json
 fm-bench legend --csv
 ```
 
+The legend wraps long definitions and rules to fit the terminal width instead of hiding text behind ellipses.
+
 ## Live Progress
 
 Interactive terminal runs show a single-line status indicator on stderr while prompts are loaded, models are inspected, tokens are counted, warmups run, and benchmark jobs complete. The final report still prints to stdout, so `--json`, `--csv`, and `--out` remain automation-friendly.

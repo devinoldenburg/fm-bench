@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.3
+
+- Wrapped long `fm-bench legend` table cells instead of truncating them with ellipses.
+- Kept legend output within the requested terminal width while showing full definitions and rules.
+
 ## 0.4.2
 
 - Added `fm-bench legend` for standalone definitions of every terminal table column, compact field, model-list column, and color rule.
