@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { renderBenchmarkReport } from '../src/table.js';
+import { legendEntries, renderBenchmarkReport, renderLegend } from '../src/table.js';
 import { stripAnsi } from '../src/ansi.js';
 
 const payload = {
@@ -59,9 +59,26 @@ test('renderBenchmarkReport includes sweep concurrency in header', () => {
   assert.match(report, /\| 1 \| system/);
 });
 
-test('renderBenchmarkReport explains CV color thresholds', () => {
+test('renderBenchmarkReport omits metric legend', () => {
   const report = renderBenchmarkReport(payload, { width: 120, ascii: true });
-  assert.match(report, /CV = latency variation; lower is steadier: green <=10%, yellow <=25%, red >25%/);
+  assert.doesNotMatch(report, /CV = latency variation/);
+  assert.doesNotMatch(report, /TTFT = first streamed output/);
+});
+
+test('renderLegend explains table columns and CV thresholds', () => {
+  const report = renderLegend({ width: 160, ascii: true });
+  assert.match(report, /TTFT/);
+  assert.match(report, /GOOD RPS/);
+  assert.match(report, /CV/);
+  assert.match(report, /green <=10%, yellow <=25%, red >25%/i);
+});
+
+test('legendEntries include every table section', () => {
+  const sections = new Set(legendEntries().map((item) => item.table));
+  assert.ok(sections.has('summary'));
+  assert.ok(sections.has('detail'));
+  assert.ok(sections.has('models'));
+  assert.ok(sections.has('colors'));
 });
 
 test('renderBenchmarkReport colors cells without changing visible width', () => {

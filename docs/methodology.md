@@ -16,6 +16,8 @@ The metric set follows common LLM inference benchmark practice:
 
 ## Metrics
 
+For a column-by-column terminal reference, run `fm-bench legend`.
+
 - `TTFT`: time from starting `fm respond` to the first streamed stdout chunk. This is a practical terminal-side proxy for time to first token.
 - `E2E latency`: time from starting `fm respond` until the process exits and the full response is captured.
 - `generation_ms`: `E2E - TTFT`.

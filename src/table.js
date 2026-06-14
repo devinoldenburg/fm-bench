@@ -56,10 +56,69 @@ export function renderBenchmarkReport(payload, options = {}) {
     lines.push(renderDetailTable(payload.summary, { ...options, mode, width, slo: payload.options.slo }));
   }
 
-  lines.push('');
-  lines.push(compactLegend(width));
-
   return lines.join('\n');
+}
+
+export function legendEntries() {
+  return [
+    entry('summary', 'C', 'Concurrency operating point for this row.', 'Higher C means more parallel fm respond processes.'),
+    entry('summary', 'MODEL', 'fm model name, such as system or pcc.', ''),
+    entry('summary', 'STATUS', 'Run status for this model and operating point.', 'ok = all measured jobs passed; partial = at least one failed; skipped = unavailable.'),
+    entry('summary', 'OK / OK/RUNS', 'Successful measured runs over attempted measured runs.', 'Green when no failures; yellow when partial.'),
+    entry('summary', 'SUCC / SUCCESS', 'Success rate: successful runs divided by attempted runs.', 'Green 100%, yellow >=95%, red <95%.'),
+    entry('summary', 'GOOD', 'Goodput rate: successful runs that also met every configured SLO.', 'Only appears when SLO flags are set. Green 100%, yellow >=80%, red <80%.'),
+    entry('summary', 'GOOD RPS', 'SLO-passing requests per second during this measured window.', 'Zero is shown when SLOs are set and no request meets them.'),
+    entry('summary', 'TTFT', 'Time to first streamed output chunk, p50.', 'Lower is better. Uses SLO threshold when set; otherwise relative ranking.'),
+    entry('summary', 'TTFT P95', '95th percentile time to first streamed output chunk.', 'Lower is better.'),
+    entry('summary', 'E2E', 'End-to-end latency, p50, from starting fm respond until full response exits.', 'Lower is better.'),
+    entry('summary', 'E2E P95', '95th percentile end-to-end latency.', 'Lower is better; this is usually the main interactive tail-latency signal.'),
+    entry('summary', 'TPOT', 'Time per output token after the first output token, p50.', 'Lower is better. Requires streaming and token counts.'),
+    entry('summary', 'TPOT P95', '95th percentile time per output token after first token.', 'Lower is better.'),
+    entry('summary', 'USER/S / USER T/S', 'Per-request output tokens per second.', 'Higher is better; relative ranking.'),
+    entry('summary', 'SYS/S / SYS T/S', 'Aggregate successful output-token throughput for the model row.', 'Higher is better; relative ranking.'),
+    entry('summary', 'RPS', 'Successful requests per second over the model row measured window.', 'Higher is better; relative ranking.'),
+    entry('summary', 'CV', 'Coefficient of variation for E2E latency: sample stddev divided by mean.', 'Lower is steadier. Green <=10%, yellow <=25%, red >25%.'),
+    entry('summary', 'NOTE', 'Short unavailable, skipped, or error note.', ''),
+    entry('detail', 'IN AVG / IN TOK AVG', 'Average prompt/input token count from fm token-count.', ''),
+    entry('detail', 'OUT AVG / OUT TOK AVG', 'Average output token count from fm token-count.', ''),
+    entry('detail', 'PREFILL/S / PREFILL TOK/S', 'Prompt tokens divided by TTFT seconds.', 'Higher is better; estimates prompt-processing speed for streaming runs.'),
+    entry('detail', 'DECODE/S / DECODE TOK/S', 'Output tokens after the first token divided by generation seconds.', 'Higher is better; requires streaming and token counts.'),
+    entry('detail', '2ND CHUNK', 'Delay between the first and second streamed stdout chunks, p50.', 'Lower is smoother startup. Chunk-based, not raw token telemetry.'),
+    entry('detail', 'CHUNK P95', '95th percentile gap between consecutive streamed stdout chunks.', 'Lower is smoother streaming.'),
+    entry('detail', 'E2E P99', '99th percentile end-to-end latency.', 'Lower is better; useful for worst-case UX.'),
+    entry('detail', 'E2E 95% CI', '95% confidence interval around mean E2E latency.', 'Narrower usually means a steadier estimate. Treat small samples carefully.'),
+    entry('detail', 'REPEAT', 'Share of repeated runs for a prompt that produced the most common normalized output hash.', 'Green 90%+, yellow 50%+, red below 50%. Blank when there are not repeated comparable outputs.'),
+    entry('detail', 'DESCRIPTION', 'Model description discovered from fm help.', ''),
+    entry('models', 'AVAILABLE', 'Whether fm available reports the model as usable on this machine right now.', ''),
+    entry('models', 'QUOTA', 'Raw fm quota-usage output or unavailable reason.', 'Mostly relevant for Private Cloud Compute.'),
+    entry('compact', 'GOOD / CV / TPOT / CHUNK', 'Compact output combines the same summary and detail metrics into model cards.', 'Same definitions and color rules as table columns.'),
+    entry('colors', 'GREEN', 'Passing, steadier, faster, or better within this benchmark context.', ''),
+    entry('colors', 'YELLOW', 'Marginal, partial, near a budget, or middle-ranked within this benchmark context.', ''),
+    entry('colors', 'RED', 'Failed budget, unstable, slower, lower, or worse within this benchmark context.', ''),
+    entry('colors', 'MUTED', 'Unavailable model, skipped value, or descriptive text.', '')
+  ];
+}
+
+export function renderLegend(options = {}) {
+  const width = terminalWidth(options);
+  const rows = legendEntries().map((item) => [
+    item.table,
+    item.column,
+    item.definition,
+    item.rule || '-'
+  ]);
+
+  if (options.compact || width < 88) {
+    return legendEntries().map((item) => {
+      const suffix = item.rule ? ` Rule: ${item.rule}` : '';
+      return truncate(`${item.table.toUpperCase()} ${item.column}: ${item.definition}${suffix}`, width);
+    }).join('\n');
+  }
+
+  return renderTable(['table', 'column', 'definition', 'rule'], rows, {
+    ...options,
+    maxCellWidth: Math.max(20, Math.floor((width - 48) / 2))
+  });
 }
 
 export function formatMs(value) {
@@ -250,19 +309,21 @@ function terminalWidth(options = {}) {
   return options.width || process.stdout.columns || 120;
 }
 
-function compactLegend(width) {
-  return [
-    'TTFT = first streamed output. E2E = full response. TPOT = post-first-token decode cadence.',
-    'CV = latency variation; lower is steadier: green <=10%, yellow <=25%, red >25%.'
-  ].map((line) => truncate(line, width)).join('\n');
-}
-
 function formatSlo(slo = {}) {
   const parts = [];
   if (slo.ttftMs) parts.push(`TTFT<=${formatMs(slo.ttftMs)}`);
   if (slo.e2eMs) parts.push(`E2E<=${formatMs(slo.e2eMs)}`);
   if (slo.tpotMs) parts.push(`TPOT<=${formatMs(slo.tpotMs)}`);
   return parts.length ? `SLO ${parts.join(',')}` : '';
+}
+
+function entry(table, column, definition, rule) {
+  return {
+    table,
+    column,
+    definition,
+    rule
+  };
 }
 
 const ASCII_TABLE = {

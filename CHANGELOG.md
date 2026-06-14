@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.2
+
+- Added `fm-bench legend` for standalone definitions of every terminal table column, compact field, model-list column, and color rule.
+- Added JSON and CSV output for the legend command via `--json` and `--csv`.
+- Removed the metric legend footer from benchmark reports so benchmark output stays focused on results.
+
 ## 0.4.1
 
 - Clarified the terminal legend for CV coloring: green `<=10%`, yellow `<=25%`, red `>25%`.

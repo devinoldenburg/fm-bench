@@ -51,12 +51,15 @@ prompts 5 | runs 3 | concurrency 1,2 | stream on | measured 30 | failed 0 | skip
 ```sh
 fm-bench [run] [options]
 fm-bench models [options]
+fm-bench legend [options]
 fm-bench doctor [options]
 ```
 
 `run` is the default command. It benchmarks all models discovered from `fm` and skips models that are currently unavailable.
 
 `models` lists discovered models, availability, descriptions, and quota output.
+
+`legend` explains every terminal table column, compact-card field, model-list column, and color rule. It does not run `fm`.
 
 `doctor` checks Node, macOS, `fm`, and model availability.
 
@@ -72,6 +75,8 @@ fm-bench --models system --runs 5 --slo-ttft-ms 750 --slo-e2e-ms 4000
 fm-bench --prompt "Reply with exactly: ok" --runs 5
 fm-bench --prompt-file prompts.json --format json --out reports/bench.json
 fm-bench --format csv --out reports/bench.csv
+fm-bench legend
+fm-bench legend --json
 ```
 
 Useful flags:
@@ -145,6 +150,16 @@ Token counts come from `fm token-count --quiet`. If `fm` cannot count a response
 Measured runs stream by default so `fm-bench` can capture TTFT and streaming smoothness. Use `--no-stream` if you need buffered `fm respond` behavior; TTFT, TPOT, second-chunk, and chunk-gap fields that depend on streaming will be blank.
 
 Terminal output is responsive. Wide terminals show full scoreboard and detail tables, medium terminals show a tighter operating-point table, and narrow terminals switch to compact model cards. Use `--width` to preview a layout and `--ascii` for log systems that do not render Unicode borders well.
+
+## Table Legend
+
+Benchmark output stays focused on results and does not print the metric legend footer. Use `fm-bench legend` when you want definitions for every table column and color rule:
+
+```sh
+fm-bench legend
+fm-bench legend --json
+fm-bench legend --csv
+```
 
 ## Live Progress
 

@@ -17,6 +17,11 @@ test('parseArgs defaults to run command and table output', () => {
   assert.equal(args.ascii, false);
 });
 
+test('parseArgs supports legend command and metrics alias', () => {
+  assert.equal(parseArgs(['legend']).command, 'legend');
+  assert.equal(parseArgs(['metrics']).command, 'legend');
+});
+
 test('parseArgs supports terminal rendering and stream flags', () => {
   const args = parseArgs(['--ascii', '--color', '--progress', '--compact', '--width', '72', '--no-stream']);
   assert.equal(args.ascii, true);

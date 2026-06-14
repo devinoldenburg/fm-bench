@@ -4,7 +4,7 @@ import { inspectModels, runBenchmark } from './bench.js';
 import { runProcess } from './process.js';
 import { createProgress } from './progress.js';
 import { flattenResults, toCsv, writeReport } from './report.js';
-import { renderBenchmarkReport, renderModelsTable } from './table.js';
+import { legendEntries, renderBenchmarkReport, renderLegend, renderModelsTable } from './table.js';
 
 const require = createRequire(import.meta.url);
 const packageJson = require('../package.json');
@@ -19,6 +19,17 @@ export async function runCli(argv = process.argv.slice(2)) {
 
   if (parsed.versionOnly) {
     console.log(packageJson.version);
+    return;
+  }
+
+  if (parsed.command === 'legend') {
+    if (parsed.format === 'json') {
+      console.log(JSON.stringify(legendEntries(), null, 2));
+    } else if (parsed.format === 'csv') {
+      console.log(toCsv(legendEntries()));
+    } else {
+      console.log(renderLegend(renderOptions(parsed)));
+    }
     return;
   }
 
@@ -105,8 +116,12 @@ export function parseArgs(argv) {
   };
 
   const args = [...argv];
-  if (args[0] && !args[0].startsWith('-') && ['run', 'models', 'doctor', 'help'].includes(args[0])) {
+  if (args[0] && !args[0].startsWith('-') && ['run', 'models', 'doctor', 'legend', 'metrics', 'help'].includes(args[0])) {
     options.command = args.shift();
+  }
+
+  if (options.command === 'metrics') {
+    options.command = 'legend';
   }
 
   if (options.command === 'help') {
@@ -359,7 +374,14 @@ Dynamic benchmark CLI for Apple's fm command on macOS 27+.
 Usage:
   fm-bench [run] [options]
   fm-bench models [options]
+  fm-bench legend [options]
   fm-bench doctor [options]
+
+Commands:
+  run                  Benchmark discovered or selected fm models
+  models               List discovered models and availability
+  legend               Explain every terminal table column and color rule
+  doctor               Check Node, macOS, fm, and model availability
 
 Run options:
   -m, --models <list>       Models to benchmark, comma-separated or repeated
@@ -412,6 +434,7 @@ Examples:
   fm-bench --models system,pcc --runs 3 --profile stress
   fm-bench --profile client --sweep-concurrency 1,2 --request-rate 0.5
   fm-bench --prompt "Reply with exactly: ok" --json --out bench.json
+  fm-bench legend
   fm-bench models
   fm-bench doctor
 `;
