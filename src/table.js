@@ -251,8 +251,10 @@ function terminalWidth(options = {}) {
 }
 
 function compactLegend(width) {
-  const text = 'TTFT = first streamed output. E2E = full response. TPOT = post-first-token decode cadence. CV = lower is steadier.';
-  return truncate(text, width);
+  return [
+    'TTFT = first streamed output. E2E = full response. TPOT = post-first-token decode cadence.',
+    'CV = latency variation; lower is steadier: green <=10%, yellow <=25%, red >25%.'
+  ].map((line) => truncate(line, width)).join('\n');
 }
 
 function formatSlo(slo = {}) {

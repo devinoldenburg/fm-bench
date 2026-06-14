@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.1
+
+- Clarified the terminal legend for CV coloring: green `<=10%`, yellow `<=25%`, red `>25%`.
+- Documented that red CV means high latency variation, even though lower CV is steadier.
+
 ## 0.4.0
 
 - Added a live progress status line on stderr so benchmark runs no longer look stalled while models are discovered, tokens are counted, warmups run, and measured jobs complete.

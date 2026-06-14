@@ -59,6 +59,11 @@ test('renderBenchmarkReport includes sweep concurrency in header', () => {
   assert.match(report, /\| 1 \| system/);
 });
 
+test('renderBenchmarkReport explains CV color thresholds', () => {
+  const report = renderBenchmarkReport(payload, { width: 120, ascii: true });
+  assert.match(report, /CV = latency variation; lower is steadier: green <=10%, yellow <=25%, red >25%/);
+});
+
 test('renderBenchmarkReport colors cells without changing visible width', () => {
   const report = renderBenchmarkReport(payload, { width: 60, ascii: true, color: true });
   assert.match(report, /\u001b\[/);

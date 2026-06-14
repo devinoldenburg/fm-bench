@@ -160,7 +160,7 @@ Table output uses semantic ANSI color on interactive terminals:
 - yellow: marginal, partial, or near a budget.
 - red: failing a budget, unstable, or slower/lower than peers.
 
-Success rate, goodput, repeatability, and CV use fixed benchmark thresholds. Throughput columns use relative ranking within the current run because “good” depends on the machine, model, prompt mix, and concurrency. TTFT, E2E, and TPOT use SLO thresholds when you pass `--slo-ttft-ms`, `--slo-e2e-ms`, or `--slo-tpot-ms`; otherwise they use lower-is-better relative ranking across the models and operating points in the report.
+Success rate, goodput, repeatability, and CV use fixed benchmark thresholds. CV is green at `<=10%`, yellow at `<=25%`, and red above `25%` because higher CV means less steady latency. Throughput columns use relative ranking within the current run because “good” depends on the machine, model, prompt mix, and concurrency. TTFT, E2E, and TPOT use SLO thresholds when you pass `--slo-ttft-ms`, `--slo-e2e-ms`, or `--slo-tpot-ms`; otherwise they use lower-is-better relative ranking across the models and operating points in the report.
 
 Use `--color` to force ANSI colors in captured logs, or `--no-color` for plain output. `NO_COLOR=1` disables automatic color and `FORCE_COLOR=1` enables it.
 
