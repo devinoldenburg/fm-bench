@@ -18,6 +18,10 @@ export function runProcess(command, args = [], options = {}) {
 
     let stdout = '';
     let stderr = '';
+    let stdoutChunks = 0;
+    let stderrChunks = 0;
+    let firstStdoutMs = null;
+    let firstStderrMs = null;
     let timedOut = false;
     let settled = false;
 
@@ -34,9 +38,17 @@ export function runProcess(command, args = [], options = {}) {
     child.stdout.setEncoding('utf8');
     child.stderr.setEncoding('utf8');
     child.stdout.on('data', (chunk) => {
+      stdoutChunks += 1;
+      if (firstStdoutMs == null && chunk.length > 0) {
+        firstStdoutMs = Number(process.hrtime.bigint() - startedAt) / 1e6;
+      }
       stdout += chunk;
     });
     child.stderr.on('data', (chunk) => {
+      stderrChunks += 1;
+      if (firstStderrMs == null && chunk.length > 0) {
+        firstStderrMs = Number(process.hrtime.bigint() - startedAt) / 1e6;
+      }
       stderr += chunk;
     });
 
@@ -51,6 +63,10 @@ export function runProcess(command, args = [], options = {}) {
         signal: null,
         stdout,
         stderr: stderr || error.message,
+        stdoutChunks,
+        stderrChunks,
+        firstStdoutMs,
+        firstStderrMs,
         error,
         timedOut,
         durationMs: Number(endedAt - startedAt) / 1e6
@@ -68,6 +84,10 @@ export function runProcess(command, args = [], options = {}) {
         signal,
         stdout,
         stderr,
+        stdoutChunks,
+        stderrChunks,
+        firstStdoutMs,
+        firstStderrMs,
         timedOut,
         durationMs: Number(endedAt - startedAt) / 1e6
       });

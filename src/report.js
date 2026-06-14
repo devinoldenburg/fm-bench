@@ -17,12 +17,19 @@ export function flattenResults(results) {
     run: result.run,
     ok: result.ok,
     duration_ms: round(result.durationMs),
+    ttft_ms: round(result.firstTokenMs),
+    generation_ms: round(result.generationMs),
+    tpot_ms: round(result.tpotMs),
     prompt_tokens: result.promptTokens ?? '',
     output_tokens: result.outputTokens ?? '',
     chars: result.chars,
     words: result.words,
     tokens_per_second: result.tokensPerSecond == null ? '' : round(result.tokensPerSecond),
+    decode_tokens_per_second: result.decodeTokensPerSecond == null ? '' : round(result.decodeTokensPerSecond),
     chars_per_second: round(result.charsPerSecond),
+    streamed: result.streamed,
+    stdout_chunks: result.stdoutChunks,
+    output_hash: result.outputHash || '',
     error: result.error || ''
   }));
 }

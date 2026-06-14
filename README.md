@@ -35,12 +35,20 @@ fm-bench
 Example output:
 
 ```text
-+--------+---------+------+----+------+-------+-------+-------+-------+--------+---------+------+
-| model  | status  | runs | ok | fail | p50   | p95   | avg   | tok/s | char/s | out tok | note |
-+--------+---------+------+----+------+-------+-------+-------+-------+--------+---------+------+
-| system | ok      |    3 |  3 |    - | 1.21s | 1.85s | 1.34s |  18.7 |    83  |      24 |      |
-| pcc    | skipped |    - |  - |    - | -     | -     | -     | -     | -      | -       | PCC inference is not available... |
-+--------+---------+------+----+------+-------+-------+-------+-------+--------+---------+------+
+fm-bench 0.2.0 | darwin/arm64 | fm
+prompts 3 | runs 1 | concurrency 1 | stream on | measured 3 | failed 0 | skipped models 0 | elapsed 11.36s
+
+┌────────┬────────┬──────┬────┬─────────┬──────────┬──────────┬─────────┬─────────┬──────────┬───────┬─────┬──────┐
+│ MODEL  │ STATUS │ RUNS │ OK │ SUCCESS │ TTFT P50 │ TTFT P95 │ E2E P50 │ E2E P95 │ TPOT P50 │ TOK/S │ RPS │ NOTE │
+├────────┼────────┼──────┼────┼─────────┼──────────┼──────────┼─────────┼─────────┼──────────┼───────┼─────┼──────┤
+│ system │ ok     │    3 │  3 │    100% │    409ms │    486ms │   2.29s │   5.97s │     14ms │  58.5 │ 0.3 │      │
+└────────┴────────┴──────┴────┴─────────┴──────────┴──────────┴─────────┴─────────┴──────────┴───────┴─────┴──────┘
+
+┌────────┬────────────┬─────────────┬─────────────┬──────────────┬─────────┬──────────┬────────┬──────────────────────────────────┐
+│ MODEL  │ IN TOK AVG │ OUT TOK AVG │ TOTAL TOK/S │ DECODE TOK/S │ E2E P99 │ TPOT P95 │ REPEAT │ DESCRIPTION                      │
+├────────┼────────────┼─────────────┼─────────────┼──────────────┼─────────┼──────────┼────────┼──────────────────────────────────┤
+│ system │         35 │         196 │        59.5 │         75.0 │   6.30s │     15ms │      - │ On-device Apple Foundation Model │
+└────────┴────────────┴─────────────┴─────────────┴──────────────┴─────────┴──────────┴────────┴──────────────────────────────────┘
 ```
 
 ## Commands
@@ -61,6 +69,8 @@ fm-bench doctor [options]
 
 ```sh
 fm-bench --models system,pcc --runs 3 --profile stress
+fm-bench --models system --runs 5 --profile interactive
+fm-bench --models system --runs 3 --profile throughput --warmup 1
 fm-bench --prompt "Reply with exactly: ok" --runs 5
 fm-bench --prompt-file prompts.json --format json --out reports/bench.json
 fm-bench --format csv --out reports/bench.csv
@@ -73,13 +83,14 @@ Useful flags:
 - `--warmup <n>`: warmup runs per model before measurement.
 - `--concurrency <n>`: parallel `fm` processes.
 - `--timeout-ms <n>`: timeout per `fm` call.
-- `--profile quick|standard|stress`: built-in prompt suite.
+- `--profile quick|standard|interactive|throughput|stress`: built-in prompt suite.
 - `--prompt <text>`: custom prompt, repeatable.
 - `--prompt-file <file>`: JSON, JSONL, or blank-line separated text prompts.
 - `--instructions <text>`: passed to `fm respond`.
 - `--available-only`: hide unavailable discovered models.
 - `--capture-output`: include raw model output in JSON reports.
 - `--json`, `--csv`, `--format table|json|csv`: choose output format.
+- `--ascii`: use plain ASCII table borders.
 - `--out <file>`: save a report.
 
 ## Prompt Files
@@ -106,14 +117,23 @@ Plain text files are split on blank lines.
 
 `fm-bench` reports:
 
-- `p50`, `p95`, and average wall-clock latency.
-- average output tokens per second.
-- average characters per second.
-- average output tokens.
+- TTFT, or time to first streamed output.
+- E2E latency, or full response wall-clock latency.
+- TPOT, or decode time per output token after the first output token.
+- output tokens per second per request.
+- total output token throughput across the measured window.
+- requests per second across the measured window.
+- prompt and output token counts.
+- p50, p95, and p99 tail latency views.
+- repeatability across repeated runs of the same prompt.
 - success and failure counts.
 - unavailable model notes.
 
-Token counts come from `fm token-count --quiet`. If `fm` cannot count a response, the token fields are left blank while character throughput is still reported.
+Token counts come from `fm token-count --quiet`. If `fm` cannot count a response, token fields are left blank while character throughput is still reported.
+
+Measured runs stream by default so `fm-bench` can capture TTFT. Use `--no-stream` if you need buffered `fm respond` behavior; TTFT and TPOT fields that depend on streaming will be blank.
+
+See [docs/methodology.md](docs/methodology.md) for the benchmark methodology and source references.
 
 ## Requirements
 

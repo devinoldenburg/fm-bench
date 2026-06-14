@@ -13,4 +13,12 @@ test('parseArgs defaults to run command and table output', () => {
   assert.equal(args.command, 'run');
   assert.equal(args.format, 'table');
   assert.equal(args.runs, 1);
+  assert.equal(args.stream, true);
+  assert.equal(args.ascii, false);
+});
+
+test('parseArgs supports terminal rendering and stream flags', () => {
+  const args = parseArgs(['--ascii', '--no-stream']);
+  assert.equal(args.ascii, true);
+  assert.equal(args.stream, false);
 });

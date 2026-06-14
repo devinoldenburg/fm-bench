@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { checkModelAvailability, collectEnvironment, countTokens, discoverModels, getQuotaUsage, respond } from './fm.js';
 import { loadPrompts } from './prompts.js';
 import { summarizeByModel } from './stats.js';
@@ -59,6 +60,7 @@ export async function runBenchmark(options = {}) {
   }
 
   const jobs = [];
+  const benchmarkStartedAt = process.hrtime.bigint();
   for (const model of runnableModels) {
     for (const prompt of prompts) {
       for (let run = 1; run <= options.runs; run += 1) {
@@ -69,7 +71,7 @@ export async function runBenchmark(options = {}) {
 
   const results = [];
   await runLimited(jobs, Math.max(1, options.concurrency), async (job) => {
-    const result = await runSingleBenchmark(inspection.fmBin, job, promptTokenCounts, options);
+    const result = await runSingleBenchmark(inspection.fmBin, job, promptTokenCounts, options, benchmarkStartedAt);
     results.push(result);
     if (!result.ok && options.failFast) {
       const error = new Error(result.error || `Benchmark failed for ${job.model.name}`);
@@ -77,6 +79,10 @@ export async function runBenchmark(options = {}) {
       throw error;
     }
   });
+
+  results.sort((a, b) => a.model.localeCompare(b.model)
+    || a.promptId.localeCompare(b.promptId)
+    || a.run - b.run);
 
   const summary = summarizeByModel(results, modelStatuses);
   return {
@@ -97,15 +103,28 @@ export async function runBenchmark(options = {}) {
   };
 }
 
-async function runSingleBenchmark(fmBin, job, promptTokenCounts, options) {
+async function runSingleBenchmark(fmBin, job, promptTokenCounts, options, benchmarkStartedAt) {
+  const startOffsetMs = Number(process.hrtime.bigint() - benchmarkStartedAt) / 1e6;
   const response = await respond(fmBin, job.model.name, job.prompt.prompt, {
     ...options,
-    stream: false
+    stream: options.stream
   });
+  const endOffsetMs = Number(process.hrtime.bigint() - benchmarkStartedAt) / 1e6;
   const outputTokens = response.ok
     ? await countTokens(fmBin, response.output, options)
     : { ok: false, count: null };
   const seconds = response.durationMs / 1000;
+  const firstTokenMs = response.firstOutputMs;
+  const generationMs = response.ok && firstTokenMs != null
+    ? Math.max(0, response.durationMs - firstTokenMs)
+    : null;
+  const countedOutputTokens = outputTokens.ok ? outputTokens.count : null;
+  const decodeTokenCount = countedOutputTokens != null ? Math.max(0, countedOutputTokens - 1) : null;
+  const hasDecodeCadence = response.stdoutChunks > 2 && generationMs != null && generationMs > 0 && decodeTokenCount > 0;
+  const tpotMs = hasDecodeCadence ? generationMs / decodeTokenCount : null;
+  const decodeTokensPerSecond = hasDecodeCadence
+    ? decodeTokenCount / (generationMs / 1000)
+    : null;
   const chars = response.output.length;
   const words = response.output.trim() ? response.output.trim().split(/\s+/).length : 0;
 
@@ -115,12 +134,21 @@ async function runSingleBenchmark(fmBin, job, promptTokenCounts, options) {
     run: job.run,
     ok: response.ok,
     durationMs: response.durationMs,
+    firstTokenMs,
+    generationMs,
+    tpotMs,
     promptTokens: promptTokenCounts.get(job.prompt.id),
-    outputTokens: outputTokens.ok ? outputTokens.count : null,
+    outputTokens: countedOutputTokens,
     chars,
     words,
-    tokensPerSecond: outputTokens.ok && seconds > 0 ? outputTokens.count / seconds : null,
+    tokensPerSecond: countedOutputTokens != null && seconds > 0 ? countedOutputTokens / seconds : null,
+    decodeTokensPerSecond,
     charsPerSecond: seconds > 0 ? chars / seconds : 0,
+    startOffsetMs,
+    endOffsetMs,
+    streamed: response.streamed,
+    stdoutChunks: response.stdoutChunks,
+    outputHash: response.ok ? hashOutput(response.output) : null,
     output: options.captureOutput ? response.output : undefined,
     error: response.ok ? '' : response.stderr || `fm exited with code ${response.code ?? response.signal}`
   };
@@ -156,6 +184,14 @@ function publicOptions(options) {
     profile: options.profile,
     promptCount: options.promptCount,
     greedy: options.greedy,
+    stream: options.stream,
     instructions: options.instructions ? '[set]' : ''
   };
+}
+
+function hashOutput(output) {
+  return crypto.createHash('sha256')
+    .update(output.replace(/\s+/g, ' ').trim())
+    .digest('hex')
+    .slice(0, 16);
 }

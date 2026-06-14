@@ -10,22 +10,50 @@ const PROFILES = {
   ],
   standard: [
     {
-      id: 'echo-ok',
-      prompt: 'Reply with exactly: ok'
+      id: 'interactive-short',
+      prompt: 'Answer in one sentence: why should an on-device model benchmark report p95 latency?'
     },
     {
-      id: 'explain-latency',
-      prompt: 'In one concise paragraph, explain why AI model benchmarks should report latency percentiles.'
+      id: 'structured-json',
+      prompt: 'Return compact valid JSON with keys "summary" and "risks" for this text: Local model benchmarks should measure latency, throughput, failures, prompt size, and output size.'
     },
     {
-      id: 'json-transform',
-      prompt: 'Convert this list into a valid compact JSON array of strings: alpha, beta, gamma.'
+      id: 'medium-generation',
+      prompt: 'Write a concise four-bullet checklist for evaluating whether a local AI model is fast enough for an interactive coding assistant.'
+    }
+  ],
+  interactive: [
+    {
+      id: 'chat-short-1',
+      prompt: 'Reply in one sentence: what is time to first token?'
+    },
+    {
+      id: 'chat-short-2',
+      prompt: 'Give one practical reason to benchmark with multiple prompt lengths.'
+    },
+    {
+      id: 'chat-short-3',
+      prompt: 'In under 20 words, define throughput for text generation.'
+    }
+  ],
+  throughput: [
+    {
+      id: 'long-explain',
+      prompt: 'Write six concise bullets explaining the tradeoff between latency and throughput in local LLM inference.'
+    },
+    {
+      id: 'long-transform',
+      prompt: 'Rewrite this note as a polished release note with a title and five bullets: fm-bench now measures TTFT, end-to-end latency, output tokens per second, failures, and repeatability.'
+    },
+    {
+      id: 'long-plan',
+      prompt: 'Create a compact test plan for benchmarking a local foundation model across short, medium, and long prompts.'
     }
   ],
   stress: [
     {
-      id: 'echo-ok',
-      prompt: 'Reply with exactly: ok'
+      id: 'interactive-short',
+      prompt: 'Answer in one sentence: why should an on-device model benchmark report p95 latency?'
     },
     {
       id: 'explain-latency',

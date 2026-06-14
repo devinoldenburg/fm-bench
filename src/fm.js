@@ -149,8 +149,9 @@ export async function countTokens(fmBin, text, options = {}) {
 
 export async function respond(fmBin, model, prompt, options = {}) {
   const args = ['respond', '--model', model];
+  const streamed = options.stream !== false;
 
-  if (options.stream === false) args.push('--no-stream');
+  if (!streamed) args.push('--no-stream');
   if (options.greedy) args.push('--greedy');
   if (options.instructions) args.push('--instructions', options.instructions);
   if (options.useCase) args.push('--use-case', options.useCase);
@@ -172,7 +173,10 @@ export async function respond(fmBin, model, prompt, options = {}) {
     code: result.code,
     signal: result.signal,
     timedOut: result.timedOut,
-    durationMs: result.durationMs
+    durationMs: result.durationMs,
+    firstOutputMs: streamed ? result.firstStdoutMs : null,
+    streamed,
+    stdoutChunks: result.stdoutChunks
   };
 }
 

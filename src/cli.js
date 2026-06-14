@@ -3,7 +3,7 @@ import { createRequire } from 'node:module';
 import { inspectModels, runBenchmark } from './bench.js';
 import { runProcess } from './process.js';
 import { flattenResults, toCsv, writeReport } from './report.js';
-import { renderModelsTable, renderSummaryTable } from './table.js';
+import { renderBenchmarkReport, renderModelsTable } from './table.js';
 
 const require = createRequire(import.meta.url);
 const packageJson = require('../package.json');
@@ -31,7 +31,7 @@ export async function runCli(argv = process.argv.slice(2)) {
     if (parsed.format === 'json') {
       console.log(JSON.stringify(inspection.models, null, 2));
     } else {
-      console.log(renderModelsTable(inspection.models));
+      console.log(renderModelsTable(inspection.models, { ascii: parsed.ascii }));
     }
     return;
   }
@@ -46,7 +46,7 @@ export async function runCli(argv = process.argv.slice(2)) {
   } else if (parsed.format === 'csv') {
     console.log(toCsv(flattenResults(payload.results)));
   } else {
-    console.log(renderSummaryTable(payload.summary));
+    console.log(renderBenchmarkReport(payload, { ascii: parsed.ascii }));
     if (parsed.verbose) {
       console.log();
       console.log(toCsv(flattenResults(payload.results)));
@@ -73,11 +73,13 @@ export function parseArgs(argv) {
     timeoutMs: 60_000,
     profile: 'standard',
     greedy: true,
+    stream: true,
     format: 'table',
     captureOutput: false,
     availableOnly: false,
     failFast: false,
-    verbose: false
+    verbose: false,
+    ascii: false
   };
 
   const args = [...argv];
@@ -149,6 +151,12 @@ export function parseArgs(argv) {
       case '--no-greedy':
         options.greedy = false;
         break;
+      case '--stream':
+        options.stream = true;
+        break;
+      case '--no-stream':
+        options.stream = false;
+        break;
       case '--json':
         options.format = 'json';
         break;
@@ -160,6 +168,9 @@ export function parseArgs(argv) {
         if (!['table', 'json', 'csv'].includes(options.format)) {
           throw new Error('--format must be one of: table, json, csv');
         }
+        break;
+      case '--ascii':
+        options.ascii = true;
         break;
       case '-o':
       case '--out':
@@ -258,12 +269,14 @@ Run options:
       --timeout-ms <n>      Timeout per fm call in ms (default: 60000)
   -p, --prompt <text>       Prompt to benchmark; repeatable
       --prompt-file <file>  .json, .jsonl, or blank-line separated text prompts
-      --profile <name>      quick, standard, or stress (default: standard)
+      --profile <name>      quick, standard, interactive, throughput, or stress
   -i, --instructions <text> Instructions passed to fm respond
       --use-case <case>     Pass a system model use case through to fm
       --guardrails <level>  Pass a system model guardrail level through to fm
       --greedy              Use greedy sampling (default)
       --no-greedy           Do not request greedy sampling
+      --stream              Stream responses while measuring TTFT (default)
+      --no-stream           Disable streaming; TTFT fields will be blank
       --available-only      Hide unavailable discovered models
       --capture-output      Include raw model output in JSON reports
       --fail-fast           Stop after the first failed measured run
@@ -272,6 +285,7 @@ Output:
       --format <type>       table, json, or csv (default: table)
       --json                Alias for --format json
       --csv                 Alias for --format csv
+      --ascii               Use plain ASCII tables instead of Unicode
   -o, --out <file>          Save JSON or CSV report based on file extension
   -v, --verbose             Include per-run CSV after the summary table
 
