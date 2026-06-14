@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.4
+
+- Wrapped long benchmark `NOTE`, `DESCRIPTION`, model description, and quota cells instead of truncating them with ellipses.
+- Kept metric columns compact while showing full unavailable-model and quota context.
+
 ## 0.4.3
 
 - Wrapped long `fm-bench legend` table cells instead of truncating them with ellipses.

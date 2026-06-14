@@ -149,7 +149,7 @@ Token counts come from `fm token-count --quiet`. If `fm` cannot count a response
 
 Measured runs stream by default so `fm-bench` can capture TTFT and streaming smoothness. Use `--no-stream` if you need buffered `fm respond` behavior; TTFT, TPOT, second-chunk, and chunk-gap fields that depend on streaming will be blank.
 
-Terminal output is responsive. Wide terminals show full scoreboard and detail tables, medium terminals show a tighter operating-point table, and narrow terminals switch to compact model cards. Use `--width` to preview a layout and `--ascii` for log systems that do not render Unicode borders well.
+Terminal output is responsive. Wide terminals show full scoreboard and detail tables, medium terminals show a tighter operating-point table, and narrow terminals switch to compact model cards. Long `NOTE`, `DESCRIPTION`, and model quota cells wrap so error context stays visible instead of being hidden behind ellipses. Use `--width` to preview a layout and `--ascii` for log systems that do not render Unicode borders well.
 
 ## Table Legend
 

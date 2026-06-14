@@ -3,24 +3,30 @@ import { stripAnsi } from './ansi.js';
 export function renderTable(headers, rows, options = {}) {
   const ascii = Boolean(options.ascii);
   const maxCellWidth = options.maxCellWidth || 60;
-  const normalizedRows = rows.map((row) => row.map((cell) => {
+  const wrapColumns = normalizeWrapColumns(headers, options.wrapColumns);
+  const normalizedRows = rows.map((row) => row.map((cell, index) => {
     const normalized = normalizeCell(cell);
     return {
       ...normalized,
-      text: truncate(normalized.text, maxCellWidth)
+      text: wrapColumns.has(index) ? normalized.text : truncate(normalized.text, maxCellWidth)
     };
   }));
-  const widths = headers.map((header, index) => {
+  const widths = fitTableWidths(headers, headers.map((header, index) => {
     const values = [truncate(header, maxCellWidth), ...normalizedRows.map((row) => row[index]?.text ?? '')];
+    if (wrapColumns.has(index)) {
+      return Math.max(...values.map((value) => Math.min(maxCellWidth, visibleLength(value))));
+    }
     return Math.max(...values.map(visibleLength));
-  });
+  }), wrapColumns, terminalWidth(options));
   const style = ascii ? ASCII_TABLE : UNICODE_TABLE;
 
   const top = rule(style.topLeft, style.topJoin, style.topRight, style.horizontal, widths);
   const middle = rule(style.midLeft, style.midJoin, style.midRight, style.horizontal, widths);
   const bottom = rule(style.bottomLeft, style.bottomJoin, style.bottomRight, style.horizontal, widths);
   const headerLine = rowLine(headers.map((header) => truncate(header, maxCellWidth)), widths, style, true, options);
-  const bodyLines = normalizedRows.map((row) => rowLine(row, widths, style, false, options));
+  const bodyLines = wrapColumns.size > 0
+    ? normalizedRows.flatMap((row) => wrappedRowLines(row, widths, style, wrapColumns, options))
+    : normalizedRows.map((row) => rowLine(row, widths, style, false, options));
 
   return [top, headerLine, middle, ...bodyLines, bottom].join('\n');
 }
@@ -155,7 +161,7 @@ export function renderSummaryTable(summary, options = {}) {
       cell(formatNumber(item.outputTokenThroughput), tones.systemTps),
       cell(formatNumber(item.rps), tones.rps),
       cell(formatPercent(item.latency.cv), cvTone(item.latency.cv)),
-      cell(item.available ? '' : compactReason(item.skippedReason), item.available ? null : 'yellow')
+      cell(item.available ? '' : cleanReason(item.skippedReason), item.available ? null : 'yellow')
     ];
 
     if (mode === 'medium') {
@@ -194,7 +200,7 @@ export function renderSummaryTable(summary, options = {}) {
     ? (hasGoodput ? mediumHeaders : mediumHeaders.filter((header) => header !== 'good' && header !== 'good rps'))
     : (hasGoodput ? wideHeaders : wideHeaders.filter((header) => header !== 'good' && header !== 'good rps'));
 
-  return renderTable(headers, rows, { ...options, maxCellWidth: mode === 'medium' ? 24 : 52 });
+  return renderTable(headers, rows, { ...options, maxCellWidth: mode === 'medium' ? 24 : 52, wrapColumns: ['note'] });
 }
 
 export function renderDetailTable(summary, options = {}) {
@@ -241,7 +247,7 @@ export function renderDetailTable(summary, options = {}) {
       'description'
     ];
 
-  return renderTable(headers, rows, { ...options, maxCellWidth: mode === 'medium' ? 34 : 52 });
+  return renderTable(headers, rows, { ...options, maxCellWidth: mode === 'medium' ? 34 : 52, wrapColumns: ['description'] });
 }
 
 export function renderCompactSummary(summary, options = {}) {
@@ -286,8 +292,8 @@ export function renderModelsTable(models, options = {}) {
     cell(model.name),
     cell(model.available ? 'yes' : 'no', model.available ? 'green' : 'yellow'),
     model.description || '-',
-    compactReason(model.quota || model.reason || '-')
-  ]), options);
+    cleanReason(model.quota || model.reason || '-')
+  ]), { ...options, wrapColumns: ['description', 'quota'] });
 }
 
 function formatRangeMs(low, high) {
@@ -372,6 +378,69 @@ function renderWrappedTable(headers, rows, widths, options = {}) {
   return [top, headerLine, middle, ...bodyLines, bottom].join('\n');
 }
 
+function normalizeWrapColumns(headers, wrapColumns = []) {
+  const normalized = new Set();
+  for (const column of wrapColumns || []) {
+    if (Number.isInteger(column)) {
+      if (column >= 0 && column < headers.length) normalized.add(column);
+      continue;
+    }
+
+    const index = headers.findIndex((header) => String(header).toLowerCase() === String(column).toLowerCase());
+    if (index >= 0) normalized.add(index);
+  }
+  return normalized;
+}
+
+function fitTableWidths(headers, widths, wrapColumns, targetWidth) {
+  if (!targetWidth || wrapColumns.size === 0 || renderedTableWidth(widths) <= targetWidth) return widths;
+
+  const fitted = [...widths];
+  const minimums = fitted.map((width, index) => (
+    wrapColumns.has(index)
+      ? Math.max(visibleLength(String(headers[index]).toUpperCase()), Math.min(12, width))
+      : width
+  ));
+  let excess = renderedTableWidth(fitted) - targetWidth;
+
+  while (excess > 0) {
+    const candidates = [...wrapColumns]
+      .filter((index) => fitted[index] > minimums[index])
+      .sort((a, b) => fitted[b] - fitted[a]);
+    if (candidates.length === 0) break;
+
+    for (const index of candidates) {
+      if (excess <= 0) break;
+      fitted[index] -= 1;
+      excess -= 1;
+    }
+  }
+
+  return fitted;
+}
+
+function renderedTableWidth(widths) {
+  return widths.reduce((sum, width) => sum + width, 0) + (widths.length * 3) + 1;
+}
+
+function wrappedRowLines(row, widths, style, wrapColumns, options = {}) {
+  const wrappedCells = row.map((value, index) => {
+    const normalized = normalizeCell(value);
+    return {
+      tone: normalized.tone,
+      lines: wrapColumns.has(index) ? wrapText(normalized.text, widths[index]) : [normalized.text]
+    };
+  });
+  const height = Math.max(...wrappedCells.map((item) => item.lines.length));
+  const lines = [];
+
+  for (let lineIndex = 0; lineIndex < height; lineIndex += 1) {
+    lines.push(rowLine(wrappedCells.map((item) => cell(item.lines[lineIndex] ?? '', item.tone)), widths, style, false, options));
+  }
+
+  return lines;
+}
+
 function rowLine(row, widths, style, header = false, options = {}) {
   return `${style.vertical}${row.map((cell, index) => {
     const normalized = header ? { text: String(cell).toUpperCase(), tone: 'header' } : normalizeCell(cell);
@@ -417,8 +486,12 @@ function visibleLength(value) {
   return stripAnsi(value).length;
 }
 
+function cleanReason(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
 function compactReason(value) {
-  const clean = String(value || '').replace(/\s+/g, ' ').trim();
+  const clean = cleanReason(value);
   if (clean.length <= 58) return clean;
   return `${clean.slice(0, 55)}...`;
 }

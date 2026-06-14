@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { legendEntries, renderBenchmarkReport, renderLegend } from '../src/table.js';
+import { legendEntries, renderBenchmarkReport, renderLegend, renderModelsTable } from '../src/table.js';
 import { stripAnsi } from '../src/ansi.js';
 
 const payload = {
@@ -141,4 +141,75 @@ test('renderBenchmarkReport uses green yellow and red metric colors', () => {
   assert.match(report, /\u001b\[32m/);
   assert.match(report, /\u001b\[33m/);
   assert.match(report, /\u001b\[31m/);
+});
+
+test('renderBenchmarkReport wraps long note and description cells without ellipses', () => {
+  const skippedItem = {
+    model: 'pcc',
+    concurrency: 1,
+    available: false,
+    attempted: 0,
+    successes: 0,
+    failures: 0,
+    successRate: null,
+    goodputRate: null,
+    goodputRps: null,
+    rps: null,
+    outputTokenThroughput: null,
+    totalTokenThroughput: null,
+    repeatability: null,
+    skippedReason: 'Error: PCC inference is not available in this context because Apple Intelligence quota or eligibility is unavailable.',
+    description: 'Apple Foundation Model on Private Cloud Compute with remote inference eligibility and quota-dependent execution.',
+    ttft: { p50: null, p95: null },
+    latency: { p50: null, p95: null, p99: null, cv: null, ci95Low: null, ci95High: null },
+    tpot: { p50: null, p95: null },
+    tokensPerSecond: { avg: null },
+    promptTokens: { avg: null },
+    outputTokens: { avg: null },
+    prefillTokensPerSecond: { avg: null },
+    decodeTokensPerSecond: { avg: null },
+    secondChunk: { p50: null },
+    chunkGap: { p95: null }
+  };
+
+  const report = renderBenchmarkReport({
+    ...payload,
+    summary: [payload.summary[0], skippedItem]
+  }, { width: 160, ascii: true, color: false });
+  const normalized = stripAnsi(report).replace(/[|\n]/g, ' ').replace(/\s+/g, ' ');
+
+  assert.doesNotMatch(report, /…|\.\.\./);
+  assert.match(normalized, /PCC inference is not available/);
+  assert.match(normalized, /quota or eligibility is unavailable/);
+  assert.match(normalized, /Apple Foundation Model/);
+  assert.match(normalized, /Private Cloud/);
+  assert.match(normalized, /Compute with remote inference/);
+  assert.match(normalized, /quota-dependent execution/);
+  for (const line of report.split('\n')) {
+    assert.ok(stripAnsi(line).length <= 160);
+  }
+});
+
+test('renderModelsTable wraps long description and quota cells without ellipses', () => {
+  const report = renderModelsTable([
+    {
+      name: 'pcc',
+      available: false,
+      description: 'Apple Foundation Model on Private Cloud Compute with remote inference eligibility and quota-dependent execution.',
+      reason: 'PCC inference is not available in this context because Apple Intelligence quota or eligibility is unavailable.'
+    }
+  ], { width: 120, ascii: true, color: false });
+  const normalized = stripAnsi(report).replace(/[|\n]/g, ' ').replace(/\s+/g, ' ');
+
+  assert.doesNotMatch(report, /…|\.\.\./);
+  assert.match(normalized, /Apple Foundation Model/);
+  assert.match(normalized, /Private Cloud/);
+  assert.match(normalized, /Compute with remote inference/);
+  assert.match(normalized, /quota-dependent execution/);
+  assert.match(normalized, /PCC inference is not available/);
+  assert.match(normalized, /quota or eligibility/);
+  assert.match(normalized, /is unavailable/);
+  for (const line of report.split('\n')) {
+    assert.ok(stripAnsi(line).length <= 120);
+  }
 });
