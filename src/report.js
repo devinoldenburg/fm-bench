@@ -13,6 +13,7 @@ export function toCsv(rows) {
 export function flattenResults(results) {
   return results.map((result) => ({
     model: result.model,
+    concurrency: result.concurrency ?? '',
     prompt_id: result.promptId,
     run: result.run,
     ok: result.ok,
@@ -30,6 +31,7 @@ export function flattenResults(results) {
     streamed: result.streamed,
     stdout_chunks: result.stdoutChunks,
     output_hash: result.outputHash || '',
+    good: result.good == null ? '' : result.good,
     error: result.error || ''
   }));
 }

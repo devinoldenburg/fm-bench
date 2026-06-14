@@ -71,6 +71,8 @@ fm-bench doctor [options]
 fm-bench --models system,pcc --runs 3 --profile stress
 fm-bench --models system --runs 5 --profile interactive
 fm-bench --models system --runs 3 --profile throughput --warmup 1
+fm-bench --models system --profile interactive --sweep-concurrency 1,2,4
+fm-bench --models system --runs 5 --slo-ttft-ms 750 --slo-e2e-ms 4000
 fm-bench --prompt "Reply with exactly: ok" --runs 5
 fm-bench --prompt-file prompts.json --format json --out reports/bench.json
 fm-bench --format csv --out reports/bench.csv
@@ -82,7 +84,9 @@ Useful flags:
 - `--runs <n>`: measured runs per prompt/model.
 - `--warmup <n>`: warmup runs per model before measurement.
 - `--concurrency <n>`: parallel `fm` processes.
+- `--sweep-concurrency <list>`: run separate measured operating points, such as `1,2,4`.
 - `--timeout-ms <n>`: timeout per `fm` call.
+- `--slo-ttft-ms <n>`, `--slo-e2e-ms <n>`, `--slo-tpot-ms <n>`: count goodput against latency budgets.
 - `--profile quick|standard|interactive|throughput|stress`: built-in prompt suite.
 - `--prompt <text>`: custom prompt, repeatable.
 - `--prompt-file <file>`: JSON, JSONL, or blank-line separated text prompts.
@@ -91,6 +95,8 @@ Useful flags:
 - `--capture-output`: include raw model output in JSON reports.
 - `--json`, `--csv`, `--format table|json|csv`: choose output format.
 - `--ascii`: use plain ASCII table borders.
+- `--compact`: force the narrow terminal layout.
+- `--width <n>`: render as if the terminal has `n` columns.
 - `--out <file>`: save a report.
 
 ## Prompt Files
@@ -123,6 +129,8 @@ Plain text files are split on blank lines.
 - output tokens per second per request.
 - total output token throughput across the measured window.
 - requests per second across the measured window.
+- goodput percentage and goodput RPS when SLO flags are set.
+- coefficient of variation (CV) and confidence interval context for stability.
 - prompt and output token counts.
 - p50, p95, and p99 tail latency views.
 - repeatability across repeated runs of the same prompt.
@@ -132,6 +140,8 @@ Plain text files are split on blank lines.
 Token counts come from `fm token-count --quiet`. If `fm` cannot count a response, token fields are left blank while character throughput is still reported.
 
 Measured runs stream by default so `fm-bench` can capture TTFT. Use `--no-stream` if you need buffered `fm respond` behavior; TTFT and TPOT fields that depend on streaming will be blank.
+
+Terminal output is responsive. Wide terminals show full scoreboard and detail tables, medium terminals show a tighter operating-point table, and narrow terminals switch to compact model cards. Use `--width` to preview a layout and `--ascii` for log systems that do not render Unicode borders well.
 
 See [docs/methodology.md](docs/methodology.md) for the benchmark methodology and source references.
 

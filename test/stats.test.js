@@ -39,7 +39,8 @@ test('summarizeByModel computes streaming and throughput metrics', () => {
       charsPerSecond: 90,
       startOffsetMs: 0,
       endOffsetMs: 1000,
-      outputHash: 'a'
+      outputHash: 'a',
+      good: true
     },
     {
       model: 'system',
@@ -56,7 +57,8 @@ test('summarizeByModel computes streaming and throughput metrics', () => {
       charsPerSecond: 70,
       startOffsetMs: 1000,
       endOffsetMs: 2200,
-      outputHash: 'a'
+      outputHash: 'a',
+      good: false
     }
   ], [
     { name: 'system', description: 'local', available: true }
@@ -66,4 +68,48 @@ test('summarizeByModel computes streaming and throughput metrics', () => {
   assert.equal(summary[0].ttft.p50, 250);
   assert.equal(summary[0].outputTokenThroughput, 18 / 2.2);
   assert.equal(summary[0].repeatability, 1);
+  assert.equal(summary[0].goodputRate, 0.5);
+});
+
+test('summarizeByModel keeps concurrency operating points separate', () => {
+  const summary = summarizeByModel([
+    {
+      model: 'system',
+      concurrency: 1,
+      promptId: 'p1',
+      ok: true,
+      durationMs: 1000,
+      firstTokenMs: 100,
+      generationMs: 900,
+      tpotMs: 100,
+      outputTokens: 10,
+      tokensPerSecond: 10,
+      charsPerSecond: 10,
+      startOffsetMs: 0,
+      endOffsetMs: 1000
+    },
+    {
+      model: 'system',
+      concurrency: 2,
+      promptId: 'p1',
+      ok: true,
+      durationMs: 2000,
+      firstTokenMs: 200,
+      generationMs: 1800,
+      tpotMs: 200,
+      outputTokens: 10,
+      tokensPerSecond: 5,
+      charsPerSecond: 5,
+      startOffsetMs: 0,
+      endOffsetMs: 2000
+    }
+  ], [
+    { name: 'system', description: 'local', available: true }
+  ], {
+    concurrencies: [1, 2]
+  });
+
+  assert.equal(summary.length, 2);
+  assert.deepEqual(summary.map((item) => item.concurrency), [1, 2]);
+  assert.deepEqual(summary.map((item) => item.latency.avg), [1000, 2000]);
 });

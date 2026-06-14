@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0
+
+- Added `--sweep-concurrency` for separate measured operating points.
+- Added SLO-based goodput with `--slo-ttft-ms`, `--slo-e2e-ms`, and `--slo-tpot-ms`.
+- Added standard deviation, coefficient of variation, and 95% confidence interval fields to numeric summaries.
+- Reworked terminal rendering into wide, medium, and compact layouts selected by terminal width.
+- Added `--compact` and `--width` terminal output controls.
+- Added responsive report tests.
+
 ## 0.2.0
 
 - Added streaming TTFT measurement.

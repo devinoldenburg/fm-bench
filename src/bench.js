@@ -44,47 +44,35 @@ export async function runBenchmark(options = {}) {
   const runnableModels = modelStatuses.filter((model) => model.available);
   const environment = await collectEnvironment(inspection.fmBin);
   const promptTokenCounts = new Map();
+  const concurrencies = normalizeConcurrencySweep(options);
 
   for (const prompt of prompts) {
     const counted = await countTokens(inspection.fmBin, prompt.prompt, options);
     promptTokenCounts.set(prompt.id, counted.ok ? counted.count : null);
   }
 
-  for (let warmupIndex = 0; warmupIndex < options.warmup; warmupIndex += 1) {
-    for (const model of runnableModels) {
-      await respond(inspection.fmBin, model.name, prompts[0].prompt, {
-        ...options,
-        stream: false
-      });
-    }
-  }
-
-  const jobs = [];
-  const benchmarkStartedAt = process.hrtime.bigint();
-  for (const model of runnableModels) {
-    for (const prompt of prompts) {
-      for (let run = 1; run <= options.runs; run += 1) {
-        jobs.push({ model, prompt, run });
-      }
-    }
-  }
-
   const results = [];
-  await runLimited(jobs, Math.max(1, options.concurrency), async (job) => {
-    const result = await runSingleBenchmark(inspection.fmBin, job, promptTokenCounts, options, benchmarkStartedAt);
-    results.push(result);
-    if (!result.ok && options.failFast) {
-      const error = new Error(result.error || `Benchmark failed for ${job.model.name}`);
-      error.exitCode = 1;
-      throw error;
-    }
-  });
+  const scenarios = [];
+  for (const concurrency of concurrencies) {
+    const scenario = await runScenario({
+      fmBin: inspection.fmBin,
+      prompts,
+      runnableModels,
+      modelStatuses,
+      promptTokenCounts,
+      options,
+      concurrency
+    });
+    scenarios.push(scenario);
+    results.push(...scenario.results);
+  }
 
   results.sort((a, b) => a.model.localeCompare(b.model)
+    || (a.concurrency ?? 0) - (b.concurrency ?? 0)
     || a.promptId.localeCompare(b.promptId)
     || a.run - b.run);
 
-  const summary = summarizeByModel(results, modelStatuses);
+  const summary = summarizeByModel(results, modelStatuses, { concurrencies });
   return {
     tool: 'fm-bench',
     version: options.version,
@@ -98,7 +86,63 @@ export async function runBenchmark(options = {}) {
       promptTokens: promptTokenCounts.get(prompt.id)
     })),
     models: modelStatuses,
+    scenarios,
     summary,
+    results
+  };
+}
+
+async function runScenario(context) {
+  const {
+    fmBin,
+    prompts,
+    runnableModels,
+    modelStatuses,
+    promptTokenCounts,
+    options,
+    concurrency
+  } = context;
+  const startedAt = new Date().toISOString();
+
+  for (let warmupIndex = 0; warmupIndex < options.warmup; warmupIndex += 1) {
+    for (const model of runnableModels) {
+      await respond(fmBin, model.name, prompts[0].prompt, {
+        ...options,
+        stream: false
+      });
+    }
+  }
+
+  const jobs = [];
+  const benchmarkStartedAt = process.hrtime.bigint();
+  for (const model of runnableModels) {
+    for (const prompt of prompts) {
+      for (let run = 1; run <= options.runs; run += 1) {
+        jobs.push({ model, prompt, run, concurrency });
+      }
+    }
+  }
+
+  const results = [];
+  await runLimited(jobs, concurrency, async (job) => {
+    const result = await runSingleBenchmark(fmBin, job, promptTokenCounts, options, benchmarkStartedAt);
+    results.push(result);
+    if (!result.ok && options.failFast) {
+      const error = new Error(result.error || `Benchmark failed for ${job.model.name}`);
+      error.exitCode = 1;
+      throw error;
+    }
+  });
+
+  results.sort((a, b) => a.model.localeCompare(b.model)
+    || a.promptId.localeCompare(b.promptId)
+    || a.run - b.run);
+
+  return {
+    concurrency,
+    startedAt,
+    finishedAt: new Date().toISOString(),
+    summary: summarizeByModel(results, modelStatuses, { concurrencies: [concurrency] }),
     results
   };
 }
@@ -130,6 +174,7 @@ async function runSingleBenchmark(fmBin, job, promptTokenCounts, options, benchm
 
   return {
     model: job.model.name,
+    concurrency: job.concurrency,
     promptId: job.prompt.id,
     run: job.run,
     ok: response.ok,
@@ -149,6 +194,11 @@ async function runSingleBenchmark(fmBin, job, promptTokenCounts, options, benchm
     streamed: response.streamed,
     stdoutChunks: response.stdoutChunks,
     outputHash: response.ok ? hashOutput(response.output) : null,
+    good: response.ok ? evaluateSlo({
+      firstTokenMs,
+      durationMs: response.durationMs,
+      tpotMs
+    }, options) : false,
     output: options.captureOutput ? response.output : undefined,
     error: response.ok ? '' : response.stderr || `fm exited with code ${response.code ?? response.signal}`
   };
@@ -175,18 +225,34 @@ function normalizeModelSelection(models) {
 }
 
 function publicOptions(options) {
+  const concurrencies = normalizeConcurrencySweep(options);
   return {
     models: normalizeModelSelection(options.models),
     runs: options.runs,
     warmup: options.warmup,
     concurrency: options.concurrency,
+    sweepConcurrency: concurrencies.length > 1 ? concurrencies : [],
     timeoutMs: options.timeoutMs,
     profile: options.profile,
     promptCount: options.promptCount,
     greedy: options.greedy,
     stream: options.stream,
+    slo: {
+      ttftMs: options.sloTtftMs || null,
+      e2eMs: options.sloE2eMs || null,
+      tpotMs: options.sloTpotMs || null
+    },
     instructions: options.instructions ? '[set]' : ''
   };
+}
+
+function normalizeConcurrencySweep(options) {
+  if (options.sweepConcurrency?.length) {
+    return [...new Set(options.sweepConcurrency)]
+      .filter((value) => Number.isInteger(value) && value > 0)
+      .sort((a, b) => a - b);
+  }
+  return [Math.max(1, options.concurrency || 1)];
 }
 
 function hashOutput(output) {
@@ -194,4 +260,16 @@ function hashOutput(output) {
     .update(output.replace(/\s+/g, ' ').trim())
     .digest('hex')
     .slice(0, 16);
+}
+
+function evaluateSlo(metrics, options) {
+  const thresholds = [
+    ['firstTokenMs', options.sloTtftMs],
+    ['durationMs', options.sloE2eMs],
+    ['tpotMs', options.sloTpotMs]
+  ].filter(([, threshold]) => Number.isFinite(threshold));
+
+  if (thresholds.length === 0) return null;
+
+  return thresholds.every(([field, threshold]) => metrics[field] != null && metrics[field] <= threshold);
 }

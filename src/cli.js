@@ -31,7 +31,7 @@ export async function runCli(argv = process.argv.slice(2)) {
     if (parsed.format === 'json') {
       console.log(JSON.stringify(inspection.models, null, 2));
     } else {
-      console.log(renderModelsTable(inspection.models, { ascii: parsed.ascii }));
+      console.log(renderModelsTable(inspection.models, renderOptions(parsed)));
     }
     return;
   }
@@ -46,7 +46,7 @@ export async function runCli(argv = process.argv.slice(2)) {
   } else if (parsed.format === 'csv') {
     console.log(toCsv(flattenResults(payload.results)));
   } else {
-    console.log(renderBenchmarkReport(payload, { ascii: parsed.ascii }));
+    console.log(renderBenchmarkReport(payload, renderOptions(parsed)));
     if (parsed.verbose) {
       console.log();
       console.log(toCsv(flattenResults(payload.results)));
@@ -70,16 +70,22 @@ export function parseArgs(argv) {
     runs: 1,
     warmup: 0,
     concurrency: 1,
+    sweepConcurrency: [],
     timeoutMs: 60_000,
     profile: 'standard',
     greedy: true,
     stream: true,
+    sloTtftMs: null,
+    sloE2eMs: null,
+    sloTpotMs: null,
     format: 'table',
     captureOutput: false,
     availableOnly: false,
     failFast: false,
     verbose: false,
-    ascii: false
+    ascii: false,
+    compact: false,
+    width: null
   };
 
   const args = [...argv];
@@ -118,9 +124,24 @@ export function parseArgs(argv) {
       case '--concurrency':
         options.concurrency = parsePositiveInt(requireValue(arg, args), arg);
         break;
+      case '--sweep-concurrency':
+        options.sweepConcurrency = parsePositiveIntList(requireValue(arg, args), arg);
+        if (options.sweepConcurrency.length > 0) {
+          options.concurrency = options.sweepConcurrency[0];
+        }
+        break;
       case '--timeout':
       case '--timeout-ms':
         options.timeoutMs = parsePositiveInt(requireValue(arg, args), arg);
+        break;
+      case '--slo-ttft-ms':
+        options.sloTtftMs = parsePositiveInt(requireValue(arg, args), arg);
+        break;
+      case '--slo-e2e-ms':
+        options.sloE2eMs = parsePositiveInt(requireValue(arg, args), arg);
+        break;
+      case '--slo-tpot-ms':
+        options.sloTpotMs = parsePositiveInt(requireValue(arg, args), arg);
         break;
       case '-p':
       case '--prompt':
@@ -171,6 +192,12 @@ export function parseArgs(argv) {
         break;
       case '--ascii':
         options.ascii = true;
+        break;
+      case '--compact':
+        options.compact = true;
+        break;
+      case '--width':
+        options.width = parsePositiveInt(requireValue(arg, args), arg);
         break;
       case '-o':
       case '--out':
@@ -251,6 +278,24 @@ function parseNonNegativeInt(value, option) {
   return parsed;
 }
 
+function parsePositiveIntList(value, option) {
+  const parsed = String(value)
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((item) => parsePositiveInt(item, option));
+  if (parsed.length === 0) throw new Error(`${option} requires at least one positive integer`);
+  return parsed;
+}
+
+function renderOptions(parsed) {
+  return {
+    ascii: parsed.ascii,
+    compact: parsed.compact,
+    width: parsed.width
+  };
+}
+
 function helpText() {
   return `fm-bench ${packageJson.version}
 
@@ -266,7 +311,12 @@ Run options:
   -r, --runs <n>            Runs per prompt/model (default: 1)
       --warmup <n>          Warmup runs per model before measurement
   -c, --concurrency <n>     Parallel fm processes (default: 1)
+      --sweep-concurrency <list>
+                            Run separate operating points, e.g. 1,2,4
       --timeout-ms <n>      Timeout per fm call in ms (default: 60000)
+      --slo-ttft-ms <n>     Count request as good only if TTFT is <= n
+      --slo-e2e-ms <n>      Count request as good only if E2E latency is <= n
+      --slo-tpot-ms <n>     Count request as good only if TPOT is <= n
   -p, --prompt <text>       Prompt to benchmark; repeatable
       --prompt-file <file>  .json, .jsonl, or blank-line separated text prompts
       --profile <name>      quick, standard, interactive, throughput, or stress
@@ -286,6 +336,8 @@ Output:
       --json                Alias for --format json
       --csv                 Alias for --format csv
       --ascii               Use plain ASCII tables instead of Unicode
+      --compact             Force compact terminal layout
+      --width <n>           Render for a specific terminal width
   -o, --out <file>          Save JSON or CSV report based on file extension
   -v, --verbose             Include per-run CSV after the summary table
 
