@@ -9,13 +9,13 @@ Apple introduced the preinstalled `fm` command for macOS 27 as part of the Found
 ## Install
 
 ```sh
-npm install -g --install-links git+https://github.com/devinoldenburg/fm-bench.git
+npm install -g fm-bench
 ```
 
-After the package is published to the npm registry, this will also work:
+You can also install directly from GitHub:
 
 ```sh
-npm install -g fm-bench
+npm install -g --install-links git+https://github.com/devinoldenburg/fm-bench.git
 ```
 
 For local development from this repository:
@@ -133,6 +133,20 @@ npm pack
 ```
 
 The package has no runtime npm dependencies.
+
+## Releases
+
+Releases are tag-driven:
+
+```sh
+npm run release:patch
+npm run release:minor
+npm run release:major
+```
+
+Pushing a `v*.*.*` tag runs the GitHub Release workflow, publishes to npm using the repository `NPM_TOKEN` secret, and creates a GitHub Release with generated notes.
+
+Maintainers can also run the **Version** workflow manually from GitHub Actions to bump the version and push the tag.
 
 ## License
 
