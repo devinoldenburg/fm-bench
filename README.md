@@ -9,7 +9,7 @@ Apple introduced the preinstalled `fm` command for macOS 27 as part of the Found
 ## Install
 
 ```sh
-npm install -g github:devinoldenburg/fm-bench
+npm install -g --install-links git+https://github.com/devinoldenburg/fm-bench.git
 ```
 
 After the package is published to the npm registry, this will also work:
