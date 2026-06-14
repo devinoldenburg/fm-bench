@@ -1,0 +1,51 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+
+export function toCsv(rows) {
+  if (rows.length === 0) return '';
+  const headers = Object.keys(rows[0]);
+  return [
+    headers.join(','),
+    ...rows.map((row) => headers.map((header) => csvEscape(row[header])).join(','))
+  ].join('\n');
+}
+
+export function flattenResults(results) {
+  return results.map((result) => ({
+    model: result.model,
+    prompt_id: result.promptId,
+    run: result.run,
+    ok: result.ok,
+    duration_ms: round(result.durationMs),
+    prompt_tokens: result.promptTokens ?? '',
+    output_tokens: result.outputTokens ?? '',
+    chars: result.chars,
+    words: result.words,
+    tokens_per_second: result.tokensPerSecond == null ? '' : round(result.tokensPerSecond),
+    chars_per_second: round(result.charsPerSecond),
+    error: result.error || ''
+  }));
+}
+
+export async function writeReport(filePath, payload, format) {
+  const target = path.resolve(filePath);
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  const content = format === 'csv'
+    ? toCsv(flattenResults(payload.results))
+    : `${JSON.stringify(payload, null, 2)}\n`;
+  await fs.writeFile(target, content, 'utf8');
+  return target;
+}
+
+function csvEscape(value) {
+  const text = String(value ?? '');
+  if (/[",\n\r]/.test(text)) {
+    return `"${text.replaceAll('"', '""')}"`;
+  }
+  return text;
+}
+
+function round(value) {
+  if (!Number.isFinite(value)) return '';
+  return Math.round(value * 100) / 100;
+}

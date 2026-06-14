@@ -1,0 +1,41 @@
+{
+  "name": "fm-bench",
+  "version": "0.1.0",
+  "description": "Dynamic benchmark CLI for Apple's fm command on macOS 27+.",
+  "type": "module",
+  "bin": {
+    "fm-bench": "./bin/fm-bench.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test",
+    "lint": "node --check bin/fm-bench.js && find src test -name '*.js' -print0 | xargs -0 -n1 node --check",
+    "prepack": "npm test && npm run lint"
+  },
+  "keywords": [
+    "apple",
+    "foundation-models",
+    "fm",
+    "benchmark",
+    "macos",
+    "cli"
+  ],
+  "author": "Devin Oldenburg",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/devinoldenburg/fm-bench.git"
+  },
+  "bugs": {
+    "url": "https://github.com/devinoldenburg/fm-bench/issues"
+  },
+  "homepage": "https://github.com/devinoldenburg/fm-bench#readme"
+}
