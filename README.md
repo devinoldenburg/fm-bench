@@ -95,6 +95,7 @@ Useful flags:
 - `--capture-output`: include raw model output in JSON reports.
 - `--json`, `--csv`, `--format table|json|csv`: choose output format.
 - `--ascii`: use plain ASCII table borders.
+- `--color`, `--no-color`: force or disable semantic ANSI colors. Colors are automatic on TTYs.
 - `--compact`: force the narrow terminal layout.
 - `--width <n>`: render as if the terminal has `n` columns.
 - `--out <file>`: save a report.
@@ -142,6 +143,18 @@ Token counts come from `fm token-count --quiet`. If `fm` cannot count a response
 Measured runs stream by default so `fm-bench` can capture TTFT. Use `--no-stream` if you need buffered `fm respond` behavior; TTFT and TPOT fields that depend on streaming will be blank.
 
 Terminal output is responsive. Wide terminals show full scoreboard and detail tables, medium terminals show a tighter operating-point table, and narrow terminals switch to compact model cards. Use `--width` to preview a layout and `--ascii` for log systems that do not render Unicode borders well.
+
+## Terminal Colors
+
+Table output uses semantic ANSI color on interactive terminals:
+
+- green: passing, steadier, or better than the current comparison set.
+- yellow: marginal, partial, or near a budget.
+- red: failing a budget, unstable, or slower/lower than peers.
+
+Success rate, goodput, repeatability, and CV use fixed benchmark thresholds. Throughput columns use relative ranking within the current run because “good” depends on the machine, model, prompt mix, and concurrency. TTFT, E2E, and TPOT use SLO thresholds when you pass `--slo-ttft-ms`, `--slo-e2e-ms`, or `--slo-tpot-ms`; otherwise they use lower-is-better relative ranking across the models and operating points in the report.
+
+Use `--color` to force ANSI colors in captured logs, or `--no-color` for plain output. `NO_COLOR=1` disables automatic color and `FORCE_COLOR=1` enables it.
 
 See [docs/methodology.md](docs/methodology.md) for the benchmark methodology and source references.
 

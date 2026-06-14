@@ -84,6 +84,7 @@ export function parseArgs(argv) {
     failFast: false,
     verbose: false,
     ascii: false,
+    color: 'auto',
     compact: false,
     width: null
   };
@@ -193,6 +194,12 @@ export function parseArgs(argv) {
       case '--ascii':
         options.ascii = true;
         break;
+      case '--color':
+        options.color = 'always';
+        break;
+      case '--no-color':
+        options.color = 'never';
+        break;
       case '--compact':
         options.compact = true;
         break;
@@ -291,9 +298,18 @@ function parsePositiveIntList(value, option) {
 function renderOptions(parsed) {
   return {
     ascii: parsed.ascii,
+    color: resolveColor(parsed.color),
     compact: parsed.compact,
     width: parsed.width
   };
+}
+
+function resolveColor(value) {
+  if (value === 'always') return true;
+  if (value === 'never') return false;
+  if (process.env.NO_COLOR) return false;
+  if (process.env.FORCE_COLOR && process.env.FORCE_COLOR !== '0') return true;
+  return Boolean(process.stdout.isTTY);
 }
 
 function helpText() {
@@ -336,6 +352,8 @@ Output:
       --json                Alias for --format json
       --csv                 Alias for --format csv
       --ascii               Use plain ASCII tables instead of Unicode
+      --color               Force ANSI colors in table output
+      --no-color            Disable ANSI colors in table output
       --compact             Force compact terminal layout
       --width <n>           Render for a specific terminal width
   -o, --out <file>          Save JSON or CSV report based on file extension

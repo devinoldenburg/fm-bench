@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.1
+
+- Added semantic ANSI colors for terminal tables and compact reports.
+- Added `--color` and `--no-color` controls, with `NO_COLOR` and `FORCE_COLOR` support.
+- Colored latency metrics by SLO budgets when provided, and by lower-is-better relative ranking otherwise.
+- Colored throughput, success, goodput, stability, repeatability, model availability, and skipped-model statuses.
+- Preserved responsive table widths when color escapes are enabled.
+
 ## 0.3.0
 
 - Added `--sweep-concurrency` for separate measured operating points.

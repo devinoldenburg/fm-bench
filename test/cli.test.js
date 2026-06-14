@@ -18,11 +18,17 @@ test('parseArgs defaults to run command and table output', () => {
 });
 
 test('parseArgs supports terminal rendering and stream flags', () => {
-  const args = parseArgs(['--ascii', '--compact', '--width', '72', '--no-stream']);
+  const args = parseArgs(['--ascii', '--color', '--compact', '--width', '72', '--no-stream']);
   assert.equal(args.ascii, true);
+  assert.equal(args.color, 'always');
   assert.equal(args.compact, true);
   assert.equal(args.width, 72);
   assert.equal(args.stream, false);
+});
+
+test('parseArgs supports disabling colors', () => {
+  const args = parseArgs(['--no-color']);
+  assert.equal(args.color, 'never');
 });
 
 test('parseArgs supports concurrency sweeps', () => {

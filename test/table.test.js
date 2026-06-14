@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { renderBenchmarkReport } from '../src/table.js';
+import { stripAnsi } from '../src/ansi.js';
 
 const payload = {
   version: '0.3.0',
@@ -56,4 +57,48 @@ test('renderBenchmarkReport includes sweep concurrency in header', () => {
   assert.match(report, /concurrency 1,2/);
   assert.match(report, /\| C \| MODEL/);
   assert.match(report, /\| 1 \| system/);
+});
+
+test('renderBenchmarkReport colors cells without changing visible width', () => {
+  const report = renderBenchmarkReport(payload, { width: 60, ascii: true, color: true });
+  assert.match(report, /\u001b\[/);
+  for (const line of report.split('\n')) {
+    assert.ok(stripAnsi(line).length <= 60);
+  }
+});
+
+test('renderBenchmarkReport uses green yellow and red metric colors', () => {
+  const slowItem = JSON.parse(JSON.stringify(payload.summary[0]));
+  slowItem.model = 'slow';
+  slowItem.goodputRate = 0.5;
+  slowItem.ttft = { p50: 260, p95: 310 };
+  slowItem.latency = { p50: 1300, p95: 1600, p99: 1800, cv: 0.35, ci95Low: 1200, ci95High: 1700 };
+  slowItem.tpot = { p50: 35, p95: 40 };
+  slowItem.tokensPerSecond = { avg: 12 };
+  slowItem.outputTokenThroughput = 14;
+  slowItem.rps = 0.3;
+  slowItem.decodeTokensPerSecond = { avg: 18 };
+
+  const report = renderBenchmarkReport({
+    ...payload,
+    options: {
+      ...payload.options,
+      slo: {
+        ttftMs: 200,
+        e2eMs: 1000,
+        tpotMs: 30
+      }
+    },
+    summary: [
+      {
+        ...payload.summary[0],
+        goodputRate: 1
+      },
+      slowItem
+    ]
+  }, { width: 160, ascii: true, color: true });
+
+  assert.match(report, /\u001b\[32m/);
+  assert.match(report, /\u001b\[33m/);
+  assert.match(report, /\u001b\[31m/);
 });
