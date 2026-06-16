@@ -51,6 +51,8 @@ prompts 5 | runs 3 | concurrency 1,2 | stream on | measured 30 | failed 0 | skip
 ```sh
 fm-bench [run] [options]
 fm-bench models [options]
+fm-bench compare <before.json> <after.json> [options]
+fm-bench history [dir] [options]
 fm-bench legend [options]
 fm-bench doctor [options]
 ```
@@ -59,9 +61,13 @@ fm-bench doctor [options]
 
 `models` lists discovered models, availability, descriptions, and quota output.
 
+`compare` reads two saved JSON reports and prints a side-by-side regression table showing absolute and percent change for every latency, throughput, and reliability metric. Green/yellow/red coloring applies lower-is-better logic for latency and CV and higher-is-better for throughput. Use `--json` to get the diff as structured data.
+
+`history` scans a directory for fm-bench JSON report files and prints a chronological trend table. Pairs with `--output-dir` to build a persistent benchmark archive.
+
 `legend` explains every terminal table column, compact-card field, model-list column, and color rule. It does not run `fm`.
 
-`doctor` checks Node, macOS, `fm`, and model availability.
+`doctor` checks Node, macOS, `fm`, model availability, CPU, memory, thermal throttle state, and battery status.
 
 ## Benchmark Options
 
@@ -72,9 +78,15 @@ fm-bench --models system --runs 3 --profile throughput --warmup 1
 fm-bench --models system --profile interactive --sweep-concurrency 1,2,4
 fm-bench --profile client --sweep-concurrency 1,2 --request-rate 0.5 --ramp-up-ms 2000
 fm-bench --models system --runs 5 --slo-ttft-ms 750 --slo-e2e-ms 4000
+fm-bench --profile reasoning --runs 5 --retry 2
+fm-bench --profile coding --runs 3 --tag pre-update --output-dir reports/
 fm-bench --prompt "Reply with exactly: ok" --runs 5
 fm-bench --prompt-file prompts.json --format json --out reports/bench.json
 fm-bench --format csv --out reports/bench.csv
+fm-bench --histogram
+fm-bench --ci --slo-ttft-ms 750 --slo-e2e-ms 4000
+fm-bench compare reports/before.json reports/after.json
+fm-bench history reports/
 fm-bench legend
 fm-bench legend --json
 ```
@@ -89,11 +101,15 @@ Useful flags:
 - `--request-rate <rps>`: pace request starts at a target requests-per-second rate.
 - `--ramp-up-ms <n>`: gradually ramp request pacing over `n` milliseconds.
 - `--timeout-ms <n>`: timeout per `fm` call.
+- `--retry <n>`: retry failed `fm` calls up to `n` times with exponential backoff (500ms–4s). Useful for handling transient model busy errors.
 - `--slo-ttft-ms <n>`, `--slo-e2e-ms <n>`, `--slo-tpot-ms <n>`: count goodput against latency budgets.
-- `--profile quick|standard|interactive|throughput|client|stress`: built-in prompt suite.
+- `--ci`: exit with code 1 if any run fails or any SLO budget is violated. Disables color and progress. Designed for GitHub Actions and CI pipelines.
+- `--profile quick|standard|interactive|throughput|client|stress|reasoning|coding|creative`: built-in prompt suite.
 - `--prompt <text>`: custom prompt, repeatable.
 - `--prompt-file <file>`: JSON, JSONL, or blank-line separated text prompts.
 - `--instructions <text>`: passed to `fm respond`.
+- `--tag <name>`: tag this run (repeatable). Tags appear in the JSON payload and report header.
+- `--note <text>`: freeform note attached to the JSON payload and report header.
 - `--available-only`: hide unavailable discovered models.
 - `--capture-output`: include raw model output in JSON reports.
 - `--json`, `--csv`, `--format table|json|csv`: choose output format.
@@ -102,7 +118,60 @@ Useful flags:
 - `--progress`, `--no-progress`: force or disable the live progress status line on stderr.
 - `--compact`: force the narrow terminal layout.
 - `--width <n>`: render as if the terminal has `n` columns.
+- `--histogram`: print an ASCII latency distribution bar chart after the report.
 - `--out <file>`: save a report.
+- `--output-dir <dir>`: auto-save a timestamped JSON report to a directory on every run.
+
+## Prompt Profiles
+
+Nine built-in profiles cover a range of workloads:
+
+| Profile | Prompts | Focus |
+|---------|---------|-------|
+| `quick` | 1 | Single-prompt smoke test |
+| `standard` | 3 | Short chat, structured JSON, medium generation |
+| `interactive` | 3 | Short conversational turns |
+| `throughput` | 3 | Longer generation and transformation tasks |
+| `client` | 5 | Broad real-world mix: chat, content, extraction, summarization, code review |
+| `stress` | 5 | Diverse stress mix with math and reasoning |
+| `reasoning` | 5 | Multi-step math, logic, causal chains, estimation, debugging |
+| `coding` | 5 | Code review, refactoring, algorithms, code explanation, system design |
+| `creative` | 5 | Product copy, error messages, analogies, commit messages, doc writing |
+
+Use `--profile reasoning` or `--profile coding` for richer signal when evaluating a model's capability alongside raw speed.
+
+## Compare Reports
+
+Save two runs to JSON and diff them:
+
+```sh
+fm-bench --runs 5 --json --out before.json
+# ... update your system, wait, or run again ...
+fm-bench --runs 5 --json --out after.json
+fm-bench compare before.json after.json
+```
+
+Output shows each model/concurrency row with before value, delta percentage (color-coded green/yellow/red), and after value for TTFT, E2E, TPOT, tokens/s, RPS, success rate, and CV.
+
+## Benchmark History
+
+Use `--output-dir` to build an archive, then view trends with `history`:
+
+```sh
+fm-bench --output-dir reports/ --runs 3
+fm-bench --output-dir reports/ --runs 3
+fm-bench history reports/
+```
+
+## CI Integration
+
+Use `--ci` to fail the pipeline when quality regresses:
+
+```sh
+fm-bench --ci --slo-ttft-ms 750 --slo-e2e-ms 4000 --runs 5
+```
+
+Exit code is 0 on pass, 1 on any failure or SLO violation. Prints `fm-bench ci: PASS` or `fm-bench ci: FAIL — <reasons>` to stderr.
 
 ## Prompt Files
 
