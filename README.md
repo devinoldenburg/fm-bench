@@ -1,10 +1,8 @@
 # fm-bench
 
-`fm-bench` is a dynamic benchmark CLI for Apple's `fm` command on macOS 27 and newer.
+Benchmark Apple's `fm` command on macOS 27+.
 
-It discovers the models reported by `fm --help`, checks availability with `fm available`, runs repeatable prompt suites through `fm respond`, counts tokens with `fm token-count`, shows live progress while it works, and prints terminal tables with latency, throughput, stability, goodput, and streaming-quality stats.
-
-Apple introduced the preinstalled `fm` command for macOS 27 as part of the Foundation Models tooling. `fm-bench` intentionally shells out to the system `fm` binary instead of linking private APIs, so it can adapt as Apple adds models or changes availability.
+Measure latency, throughput, streaming smoothness, stability, and goodput across Apple Foundation Models — with repeatable prompt suites and JSON/CSV reports for automation.
 
 ## Why fm-bench exists
 
@@ -18,38 +16,19 @@ For real apps, the important questions are:
 - What happens under concurrency?
 - Which model/hardware pair meets an interactive SLO?
 
-`fm-bench` answers those questions with repeatable local benchmarks.
-
-## Install
-
-```sh
-npm install -g fm-bench
-```
-
-You can also install directly from GitHub:
-
-```sh
-npm install -g --install-links git+https://github.com/devinoldenburg/fm-bench.git
-```
-
-For local development from this repository:
-
-```sh
-npm install
-npm link
-fm-bench doctor
-```
+`fm-bench` answers those questions with repeatable local benchmarks. Think of it as GeekBench for Apple Foundation Models — run it, get numbers, compare across hardware, models, and macOS updates.
 
 ## Quick Start
 
 ```sh
+npm install -g fm-bench
 fm-bench
 ```
 
-Example output:
+One command discovers your models, runs the standard prompt suite, and prints a full benchmark report:
 
 ```text
-fm-bench 0.4.0 | darwin/arm64 | fm
+fm-bench 0.5.0 | darwin/arm64 | fm
 prompts 5 | runs 3 | concurrency 1,2 | stream on | measured 30 | failed 0 | skipped 0 | elapsed 42.10s | SLO TTFT<=750ms,E2E<=4.00s
 
 ┌───┬────────┬────────┬─────────┬──────┬──────┬──────────┬──────┬──────────┬─────┬─────┐
@@ -60,132 +39,173 @@ prompts 5 | runs 3 | concurrency 1,2 | stream on | measured 30 | failed 0 | skip
 └───┴────────┴────────┴─────────┴──────┴──────┴──────────┴──────┴──────────┴─────┴─────┘
 ```
 
+Wide terminals add TTFT P95, TPOT, decode/prefill throughput, chunk-gap smoothness, and 95% CI columns. Narrow terminals switch to compact model cards automatically.
+
+## Install
+
+```sh
+npm install -g fm-bench
+```
+
+Install directly from GitHub (always latest):
+
+```sh
+npm install -g --install-links git+https://github.com/devinoldenburg/fm-bench.git
+```
+
+Local development:
+
+```sh
+npm install && npm link
+fm-bench doctor   # verify your setup
+```
+
+**Requirements:** macOS 27+, Node.js 20+, Apple Intelligence enabled.
+
 ## Commands
 
-```sh
-fm-bench [run] [options]
-fm-bench models [options]
-fm-bench compare <before.json> <after.json> [options]
-fm-bench history [dir] [options]
-fm-bench legend [options]
-fm-bench doctor [options]
-```
+| Command | What it does |
+|---------|-------------|
+| `fm-bench` | Run the full benchmark (default) |
+| `fm-bench models` | List discovered models, availability, and quota |
+| `fm-bench compare <a.json> <b.json>` | Regression diff: before/after metrics with color-coded deltas |
+| `fm-bench history [dir]` | Chronological trend table from a directory of saved reports |
+| `fm-bench legend` | Definitions for every table column and color rule |
+| `fm-bench doctor` | Environment check: Node, macOS, `fm`, CPU, memory, thermals, battery |
 
-`run` is the default command. It benchmarks all models discovered from `fm` and skips models that are currently unavailable.
-
-`models` lists discovered models, availability, descriptions, and quota output.
-
-`compare` reads two saved JSON reports and prints a side-by-side regression table showing absolute and percent change for every latency, throughput, and reliability metric. Green/yellow/red coloring applies lower-is-better logic for latency and CV and higher-is-better for throughput. Use `--json` to get the diff as structured data.
-
-`history` scans a directory for fm-bench JSON report files and prints a chronological trend table. Pairs with `--output-dir` to build a persistent benchmark archive.
-
-`legend` explains every terminal table column, compact-card field, model-list column, and color rule. It does not run `fm`.
-
-`doctor` checks Node, macOS, `fm`, model availability, CPU, memory, thermal throttle state, and battery status.
-
-## Benchmark Options
+## Common Recipes
 
 ```sh
+# Quick smoke test
+fm-bench --profile quick
+
+# Standard 5-run benchmark with SLO budgets
+fm-bench --runs 5 --slo-ttft-ms 750 --slo-e2e-ms 4000
+
+# Sweep concurrency to find your throughput ceiling
+fm-bench --sweep-concurrency 1,2,4 --runs 3
+
+# Stress both on-device and PCC models
 fm-bench --models system,pcc --runs 3 --profile stress
-fm-bench --models system --runs 5 --profile interactive
-fm-bench --models system --runs 3 --profile throughput --warmup 1
-fm-bench --models system --profile interactive --sweep-concurrency 1,2,4
-fm-bench --profile client --sweep-concurrency 1,2 --request-rate 0.5 --ramp-up-ms 2000
-fm-bench --models system --runs 5 --slo-ttft-ms 750 --slo-e2e-ms 4000
-fm-bench --profile reasoning --runs 5 --retry 2
-fm-bench --profile coding --runs 3 --tag pre-update --output-dir reports/
-fm-bench --prompt "Reply with exactly: ok" --runs 5
-fm-bench --prompt-file prompts.json --format json --out reports/bench.json
-fm-bench --format csv --out reports/bench.csv
-fm-bench --histogram
-fm-bench --ci --slo-ttft-ms 750 --slo-e2e-ms 4000
-fm-bench compare reports/before.json reports/after.json
-fm-bench history reports/
-fm-bench legend
-fm-bench legend --json
+
+# Reasoning and coding workloads
+fm-bench --profile reasoning --runs 5
+fm-bench --profile coding --runs 3 --histogram
+
+# Archive runs and compare before/after a macOS update
+fm-bench --output-dir reports/ --tag before-update
+fm-bench --output-dir reports/ --tag after-update
+fm-bench compare reports/fm-bench_*before*.json reports/fm-bench_*after*.json
+
+# Fail CI when SLOs regress
+fm-bench --ci --slo-ttft-ms 750 --slo-e2e-ms 4000 --runs 5
+
+# Save JSON for automation
+fm-bench --json --out bench.json
+fm-bench --format csv --out bench.csv
 ```
 
-Useful flags:
+## Options Reference
 
-- `--models <list>`: comma-separated or repeated model names.
-- `--runs <n>`: measured runs per prompt/model.
-- `--warmup <n>`: warmup runs per model before measurement.
-- `--concurrency <n>`: parallel `fm` processes.
-- `--sweep-concurrency <list>`: run separate measured operating points, such as `1,2,4`.
-- `--request-rate <rps>`: pace request starts at a target requests-per-second rate.
-- `--ramp-up-ms <n>`: gradually ramp request pacing over `n` milliseconds.
-- `--timeout-ms <n>`: timeout per `fm` call.
-- `--retry <n>`: retry failed `fm` calls up to `n` times with exponential backoff (500ms–4s). Useful for handling transient model busy errors.
-- `--slo-ttft-ms <n>`, `--slo-e2e-ms <n>`, `--slo-tpot-ms <n>`: count goodput against latency budgets.
-- `--ci`: exit with code 1 if any run fails or any SLO budget is violated. Disables color and progress. Designed for GitHub Actions and CI pipelines.
-- `--profile quick|standard|interactive|throughput|client|stress|reasoning|coding|creative`: built-in prompt suite.
-- `--prompt <text>`: custom prompt, repeatable.
-- `--prompt-file <file>`: JSON, JSONL, or blank-line separated text prompts.
-- `--instructions <text>`: passed to `fm respond`.
-- `--tag <name>`: tag this run (repeatable). Tags appear in the JSON payload and report header.
-- `--note <text>`: freeform note attached to the JSON payload and report header.
-- `--available-only`: hide unavailable discovered models.
-- `--capture-output`: include raw model output in JSON reports.
-- `--json`, `--csv`, `--format table|json|csv`: choose output format.
-- `--ascii`: use plain ASCII table borders.
-- `--color`, `--no-color`: force or disable semantic ANSI colors. Colors are automatic on TTYs.
-- `--progress`, `--no-progress`: force or disable the live progress status line on stderr.
-- `--compact`: force the narrow terminal layout.
-- `--width <n>`: render as if the terminal has `n` columns.
-- `--histogram`: print an ASCII latency distribution bar chart after the report.
-- `--out <file>`: save a report.
-- `--output-dir <dir>`: auto-save a timestamped JSON report to a directory on every run.
+**Workload**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-m, --models <list>` | all | Comma-separated or repeated model names |
+| `-r, --runs <n>` | 1 | Measured runs per prompt/model |
+| `--warmup <n>` | 0 | Warmup runs per model before measurement |
+| `-c, --concurrency <n>` | 1 | Parallel `fm` processes |
+| `--sweep-concurrency <list>` | — | Separate operating points, e.g. `1,2,4` |
+| `--request-rate <rps>` | — | Pace request starts at a target rate |
+| `--ramp-up-ms <n>` | 0 | Gradually ramp pacing over `n` ms |
+| `--timeout-ms <n>` | 60000 | Timeout per `fm` call |
+| `--retry <n>` | 0 | Retry failed calls with exponential backoff (500ms–4s) |
+| `--profile <name>` | standard | Built-in prompt suite (see Profiles) |
+| `-p, --prompt <text>` | — | Custom prompt, repeatable |
+| `--prompt-file <file>` | — | JSON, JSONL, or blank-line separated prompts |
+| `-i, --instructions <text>` | — | Passed to `fm respond` |
+
+**Quality Gates**
+
+| Flag | Description |
+|------|-------------|
+| `--slo-ttft-ms <n>` | Count a run as good only if TTFT ≤ n ms |
+| `--slo-e2e-ms <n>` | Count a run as good only if E2E latency ≤ n ms |
+| `--slo-tpot-ms <n>` | Count a run as good only if TPOT ≤ n ms |
+| `--ci` | Exit 1 if any run fails or any SLO is violated (for pipelines) |
+| `--fail-fast` | Stop after the first failed run |
+
+**Output**
+
+| Flag | Description |
+|------|-------------|
+| `--json` / `--csv` | Output format (also `--format table\|json\|csv`) |
+| `-o, --out <file>` | Save a report to a file |
+| `--output-dir <dir>` | Auto-save a timestamped JSON report to a directory |
+| `--tag <name>` | Label this run; repeatable; appears in payload and header |
+| `--note <text>` | Freeform annotation in payload and header |
+| `--histogram` | Print ASCII latency distribution chart after the report |
+| `--capture-output` | Include raw model output in JSON reports |
+| `-v, --verbose` | Append per-run CSV after the summary table |
+
+**Display**
+
+| Flag | Description |
+|------|-------------|
+| `--color` / `--no-color` | Force or disable ANSI colors (auto on TTYs) |
+| `--ascii` | Plain ASCII table borders instead of Unicode |
+| `--compact` | Force narrow terminal layout |
+| `--width <n>` | Render as if the terminal is `n` columns wide |
+| `--progress` / `--no-progress` | Force or disable the live progress line |
 
 ## Prompt Profiles
 
-Nine built-in profiles cover a range of workloads:
+Nine built-in suites, choose the one that matches your use case:
 
-| Profile | Prompts | Focus |
-|---------|---------|-------|
-| `quick` | 1 | Single-prompt smoke test |
-| `standard` | 3 | Short chat, structured JSON, medium generation |
-| `interactive` | 3 | Short conversational turns |
-| `throughput` | 3 | Longer generation and transformation tasks |
-| `client` | 5 | Broad real-world mix: chat, content, extraction, summarization, code review |
-| `stress` | 5 | Diverse stress mix with math and reasoning |
-| `reasoning` | 5 | Multi-step math, logic, causal chains, estimation, debugging |
-| `coding` | 5 | Code review, refactoring, algorithms, code explanation, system design |
-| `creative` | 5 | Product copy, error messages, analogies, commit messages, doc writing |
+| Profile | Prompts | Best for |
+|---------|---------|----------|
+| `quick` | 1 | Smoke test, fast health check |
+| `standard` | 3 | Default — short chat, JSON generation, medium output |
+| `interactive` | 3 | Conversational latency (TTFT-heavy) |
+| `throughput` | 3 | Longer generation, token throughput signal |
+| `client` | 5 | Real-world mix: chat, content, extraction, summarization, code |
+| `stress` | 5 | High-load mix with math and reasoning |
+| `reasoning` | 5 | Multi-step logic, estimation, debugging — capability + speed |
+| `coding` | 5 | Code review, refactoring, algorithms, system design |
+| `creative` | 5 | Product copy, analogies, commit messages, docs |
 
-Use `--profile reasoning` or `--profile coding` for richer signal when evaluating a model's capability alongside raw speed.
+## Regression Tracking
 
-## Compare Reports
-
-Save two runs to JSON and diff them:
+Track performance across macOS updates, model changes, or hardware swaps:
 
 ```sh
-fm-bench --runs 5 --json --out before.json
-# ... update your system, wait, or run again ...
-fm-bench --runs 5 --json --out after.json
-fm-bench compare before.json after.json
+# Before
+fm-bench --profile coding --runs 5 --output-dir reports/ --tag before
+
+# After the change
+fm-bench --profile coding --runs 5 --output-dir reports/ --tag after
+
+# See what changed
+fm-bench compare reports/fm-bench_*before*.json reports/fm-bench_*after*.json
 ```
 
-Output shows each model/concurrency row with before value, delta percentage (color-coded green/yellow/red), and after value for TTFT, E2E, TPOT, tokens/s, RPS, success rate, and CV.
-
-## Benchmark History
-
-Use `--output-dir` to build an archive, then view trends with `history`:
+The compare output shows each model/concurrency row with the before value, a color-coded percent delta (green = improvement, red = regression), and the after value — for TTFT, E2E, TPOT, tokens/s, RPS, success rate, and CV.
 
 ```sh
-fm-bench --output-dir reports/ --runs 3
-fm-bench --output-dir reports/ --runs 3
+# View the full trend over time
 fm-bench history reports/
 ```
 
 ## CI Integration
 
-Use `--ci` to fail the pipeline when quality regresses:
+Gate deployments or model updates on benchmark quality:
 
 ```sh
+# Fails with exit code 1 if TTFT > 750ms or E2E > 4s on any run
 fm-bench --ci --slo-ttft-ms 750 --slo-e2e-ms 4000 --runs 5
 ```
 
-Exit code is 0 on pass, 1 on any failure or SLO violation. Prints `fm-bench ci: PASS` or `fm-bench ci: FAIL — <reasons>` to stderr.
+Prints `fm-bench ci: PASS` or `fm-bench ci: FAIL — <reason>` to stderr. Designed for GitHub Actions, Buildkite, or any shell-based pipeline.
 
 ## Prompt Files
 
@@ -209,95 +229,52 @@ Plain text files are split on blank lines.
 
 ## Metrics
 
-`fm-bench` reports:
+**Latency** — TTFT (p50/p95), E2E (p50/p95/p99), TPOT (p50/p95), 95% confidence interval, coefficient of variation (CV).
 
-- TTFT, or time to first streamed output.
-- E2E latency, or full response wall-clock latency.
-- TPOT, or decode time per output token after the first output token.
-- second-chunk delay and chunk-gap p95 as terminal-side streaming smoothness signals.
-- prefill tokens per second, or prompt tokens divided by TTFT.
-- output tokens per second per request.
-- total output token throughput across the measured window.
-- total token throughput, including prompt and output tokens.
-- requests per second across the measured window.
-- goodput percentage and goodput RPS when SLO flags are set.
-- coefficient of variation (CV) and confidence interval context for stability.
-- prompt and output token counts.
-- p50, p95, and p99 tail latency views.
-- repeatability across repeated runs of the same prompt.
-- success and failure counts.
-- unavailable model notes.
+**Throughput** — prefill tokens/s, decode tokens/s, output tokens/s per request, aggregate system tokens/s, requests per second.
 
-Token counts come from `fm token-count --quiet`. If `fm` cannot count a response, token fields are left blank while character throughput is still reported.
+**Streaming quality** — second-chunk delay, chunk-gap p95. Captured from `stdout` chunks during streaming runs.
 
-Measured runs stream by default so `fm-bench` can capture TTFT and streaming smoothness. Use `--no-stream` if you need buffered `fm respond` behavior; TTFT, TPOT, second-chunk, and chunk-gap fields that depend on streaming will be blank.
+**Reliability** — success rate, goodput rate and RPS against SLO budgets, repeatability (most common output hash frequency across repeated runs).
 
-Terminal output is responsive. Wide terminals show full scoreboard and detail tables, medium terminals show a tighter operating-point table, and narrow terminals switch to compact model cards. Long `NOTE`, `DESCRIPTION`, and model quota cells wrap so error context stays visible instead of being hidden behind ellipses. Use `--width` to preview a layout and `--ascii` for log systems that do not render Unicode borders well.
+**Stability** — CV (stddev/mean for E2E latency); green ≤10%, yellow ≤25%, red >25%.
 
-## Table Legend
+Token counts come from `fm token-count --quiet`. If `fm` cannot count tokens, those fields are blank while character throughput is still reported.
 
-Benchmark output stays focused on results and does not print the metric legend footer. Use `fm-bench legend` when you want definitions for every table column and color rule:
+Terminal layout is responsive: wide → full scoreboard + detail tables, medium → tighter single table, narrow → compact model cards. Use `--width` to preview any layout and `--ascii` for log-friendly output.
+
+## Colors and Legend
+
+Table output is color-coded on interactive terminals — **green** is better/passing, **yellow** is marginal/partial, **red** is failing/unstable. Fixed thresholds apply to success rate, goodput, CV, and repeatability. Latency uses SLO thresholds when set, otherwise lower-is-better relative ranking. Throughput uses higher-is-better relative ranking.
 
 ```sh
-fm-bench legend
-fm-bench legend --json
-fm-bench legend --csv
+fm-bench legend          # full column definitions and color rules
+fm-bench legend --json   # machine-readable
 ```
 
-The legend wraps long definitions and rules to fit the terminal width instead of hiding text behind ellipses.
+`NO_COLOR=1` disables color; `FORCE_COLOR=1` or `--color` enables it. `--ascii` switches to plain ASCII borders for log systems.
 
-## Live Progress
-
-Interactive terminal runs show a single-line status indicator on stderr while prompts are loaded, models are inspected, tokens are counted, warmups run, and benchmark jobs complete. The final report still prints to stdout, so `--json`, `--csv`, and `--out` remain automation-friendly.
-
-Progress is automatic for table output on TTYs. Use `--progress` to force it or `--no-progress` to keep the terminal completely quiet until the report is ready.
-
-## Terminal Colors
-
-Table output uses semantic ANSI color on interactive terminals:
-
-- green: passing, steadier, or better than the current comparison set.
-- yellow: marginal, partial, or near a budget.
-- red: failing a budget, unstable, or slower/lower than peers.
-
-Success rate, goodput, repeatability, and CV use fixed benchmark thresholds. CV is green at `<=10%`, yellow at `<=25%`, and red above `25%` because higher CV means less steady latency. Throughput columns use relative ranking within the current run because “good” depends on the machine, model, prompt mix, and concurrency. TTFT, E2E, and TPOT use SLO thresholds when you pass `--slo-ttft-ms`, `--slo-e2e-ms`, or `--slo-tpot-ms`; otherwise they use lower-is-better relative ranking across the models and operating points in the report.
-
-Use `--color` to force ANSI colors in captured logs, or `--no-color` for plain output. `NO_COLOR=1` disables automatic color and `FORCE_COLOR=1` enables it.
-
-See [docs/methodology.md](docs/methodology.md) for the benchmark methodology and source references.
+A live single-line progress indicator runs on stderr during interactive sessions. The final report always goes to stdout — `--json`, `--csv`, and `--out` stay automation-friendly.
 
 ## Requirements
 
-- macOS 27 or newer for Apple's `fm` CLI.
+- macOS 27 or newer (Apple's `fm` CLI is preinstalled).
 - Node.js 20 or newer.
-- Apple Intelligence and model availability configured for the machine.
+- Apple Intelligence enabled on the device.
 
-Private Cloud Compute (`pcc`) availability depends on Apple's current eligibility and context. If `fm available --model pcc` reports unavailable, `fm-bench` will show it as skipped.
+`pcc` (Private Cloud Compute) availability depends on Apple's current eligibility. `fm-bench` shows it as skipped if `fm available --model pcc` reports unavailable.
+
+See [docs/methodology.md](docs/methodology.md) for benchmark methodology and metric references.
 
 ## Development
 
 ```sh
 npm install
-npm test
+npm test     # node --test
 npm run lint
-npm pack
 ```
 
-The package has no runtime npm dependencies.
-
-## Releases
-
-Releases are tag-driven:
-
-```sh
-npm run release:patch
-npm run release:minor
-npm run release:major
-```
-
-Pushing a `v*.*.*` tag runs the GitHub Release workflow, publishes to npm using the repository `NPM_TOKEN` secret, and creates a GitHub Release with generated notes.
-
-Maintainers can also run the **Version** workflow manually from GitHub Actions to bump the version and push the tag.
+No runtime npm dependencies.
 
 ## License
 
