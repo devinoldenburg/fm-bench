@@ -95,6 +95,18 @@ export async function runCli(argv = process.argv.slice(2)) {
     }
   }
 
+  if (parsed.outputDir) {
+    const stamp = payload.startedAt.replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);
+    const firstModel = parsed.models?.flatMap((m) => String(m).split(',')).map((m) => m.trim()).filter(Boolean)[0] || 'all';
+    const modelSlug = firstModel.replace(/[^a-z0-9]/gi, '_');
+    const filename = `fm-bench_${stamp}_${modelSlug}.json`;
+    const filePath = `${parsed.outputDir}/${filename}`;
+    const written = await writeReport(filePath, payload, 'json');
+    if (parsed.format !== 'json') {
+      console.error(`Saved JSON report to ${written}`);
+    }
+  }
+
   if (parsed.ci) {
     const ciResult = evaluateCi(payload);
     if (!ciResult.passed) {
@@ -308,6 +320,9 @@ export function parseArgs(argv) {
       case '-o':
       case '--out':
         options.out = requireValue(arg, args);
+        break;
+      case '--output-dir':
+        options.outputDir = requireValue(arg, args);
         break;
       case '--capture-output':
         options.captureOutput = true;
@@ -542,6 +557,7 @@ Output:
       --compact             Force compact terminal layout
       --width <n>           Render for a specific terminal width
   -o, --out <file>          Save JSON or CSV report based on file extension
+      --output-dir <dir>    Save a timestamped JSON report to a directory automatically
   -v, --verbose             Include per-run CSV after the summary table
 
 Environment:
