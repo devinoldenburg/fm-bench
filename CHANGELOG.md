@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.1
+
+- Repositioned README as the GeekBench for Apple Foundation Models.
+- New title, tagline, and Why section lead the page.
+- Quick Start moved before Install so readers see output immediately.
+- Commands replaced with a scannable table.
+- Benchmark Options replaced with Common Recipes (copy-paste examples) and four clean option tables (Workload, Quality Gates, Output, Display).
+- Table Legend, Live Progress, and Terminal Colors merged into a single Colors and Legend section.
+
 ## 0.5.0
 
 - Added `compare` command: diff two saved JSON reports side-by-side with absolute and percent change for every latency, throughput, and reliability metric. Lower-is-better coloring for latency and CV; higher-is-better for throughput.
