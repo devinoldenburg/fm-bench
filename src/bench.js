@@ -346,7 +346,9 @@ function publicOptions(options) {
       tpotMs: options.sloTpotMs || null
     },
     instructions: options.instructions ? '[set]' : '',
-    retry: options.retry ?? 0
+    retry: options.retry ?? 0,
+    tags: options.tags?.length ? options.tags : [],
+    note: options.note ?? null
   };
 }
 

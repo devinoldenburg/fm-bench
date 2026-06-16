@@ -50,8 +50,12 @@ export function renderBenchmarkReport(payload, options = {}) {
 
   const title = `fm-bench ${payload.version} | ${payload.environment.platform}/${payload.environment.arch} | ${payload.environment.fmBin}`;
   const meta = `prompts ${payload.prompts.length} | runs ${payload.options.runs} | concurrency ${concurrencies} | stream ${payload.options.stream ? 'on' : 'off'} | measured ${measured} | failed ${failed} | skipped ${skipped} | elapsed ${formatMs(elapsedMs)}${slo ? ` | ${slo}` : ''}`;
+  const tags = payload.options?.tags?.length ? payload.options.tags : [];
+  const note = payload.options?.note ?? null;
   lines.push(truncate(title, width));
   lines.push(truncate(meta, width));
+  if (tags.length > 0) lines.push(truncate(`tags: ${tags.join(', ')}`, width));
+  if (note) lines.push(truncate(`note: ${note}`, width));
   lines.push('');
 
   if (mode === 'compact') {

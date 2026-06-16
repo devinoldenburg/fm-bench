@@ -159,6 +159,8 @@ export function parseArgs(argv) {
     failFast: false,
     retry: 0,
     ci: false,
+    tags: [],
+    note: null,
     verbose: false,
     ascii: false,
     color: 'auto',
@@ -321,6 +323,12 @@ export function parseArgs(argv) {
         break;
       case '--ci':
         options.ci = true;
+        break;
+      case '--tag':
+        options.tags.push(requireValue(arg, args));
+        break;
+      case '--note':
+        options.note = requireValue(arg, args);
         break;
       case '-v':
       case '--verbose':
@@ -519,6 +527,8 @@ Run options:
       --fail-fast           Stop after the first failed measured run
       --retry <n>           Retry failed fm calls up to n times with exponential backoff
       --ci                  Exit 1 if any run fails or any SLO is violated; disables color and progress
+      --tag <name>          Tag this run; repeatable; included in JSON payload and report header
+      --note <text>         Freeform note included in JSON payload and report header
 
 Output:
       --format <type>       table, json, or csv (default: table)
