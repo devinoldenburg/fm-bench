@@ -93,6 +93,72 @@ const PROFILES = {
       id: 'summarize',
       prompt: 'Summarize this in two bullets: local model benchmarks should measure first-token latency, total latency, throughput, failures, and the exact prompt suite so results can be compared later.'
     }
+  ],
+  reasoning: [
+    {
+      id: 'math-word',
+      prompt: 'A server processes 1,200 requests per minute at peak. Each request uses 0.8 ms of CPU time on average. How many CPU cores are needed to handle peak load at 70% utilization? Show your reasoning step-by-step, then give a single final answer.'
+    },
+    {
+      id: 'logic-sequence',
+      prompt: 'Five engineers — Alice, Bob, Carol, Dave, Eve — each deploy one service. Alice deploys before Bob. Carol deploys after Dave but before Eve. Bob deploys before Dave. List the deployment order from first to last.'
+    },
+    {
+      id: 'causal-chain',
+      prompt: 'A CI pipeline has: lint (2 min), unit tests (5 min, parallel), integration tests (8 min, depends on unit), build (3 min, depends on integration), deploy (1 min, depends on build). What is the minimum wall-clock time from start to deployed? Explain each step.'
+    },
+    {
+      id: 'estimation',
+      prompt: 'Estimate how many tokens per day a popular AI coding assistant might process if it has 500,000 daily active users, each averaging 30 completions of 200 output tokens. Show your calculation and state any assumptions.'
+    },
+    {
+      id: 'debug-logic',
+      prompt: 'This function should return the median of a list: def median(lst): lst.sort(); n=len(lst); return lst[n//2] if n%2 else (lst[n//2-1]+lst[n//2])/2. Find all bugs and explain why each is a bug.'
+    }
+  ],
+  coding: [
+    {
+      id: 'code-review',
+      prompt: 'Review this TypeScript for correctness, performance, and readability issues: async function fetchAll(urls: string[]) { const results = []; for (const url of urls) { const r = await fetch(url); results.push(await r.json()); } return results; } Give three specific improvements with brief explanations.'
+    },
+    {
+      id: 'refactor',
+      prompt: 'Refactor this JavaScript to be cleaner and handle edge cases: function getUser(id, cb) { db.query("SELECT * FROM users WHERE id=" + id, function(err, rows) { if (err) { cb(null, err); } else { cb(rows[0]); } }); } Return only the improved code and a two-sentence explanation.'
+    },
+    {
+      id: 'algorithm',
+      prompt: 'Write a JavaScript function findDuplicates(arr) that returns all duplicate values in O(n) time and O(n) space. Include a brief complexity explanation and two edge-case examples.'
+    },
+    {
+      id: 'explain-code',
+      prompt: 'Explain what this code does, why it might be used, and one potential problem: const cache = new WeakMap(); function memoize(fn) { return function(...args) { if (!cache.has(this)) cache.set(this, new Map()); const key = JSON.stringify(args); if (!cache.get(this).has(key)) cache.get(this).set(key, fn.apply(this, args)); return cache.get(this).get(key); }; }'
+    },
+    {
+      id: 'system-design',
+      prompt: 'Design a rate limiter in 120 words or fewer: specify the data structure, the algorithm (token bucket, sliding window, or fixed window), and how you handle distributed deployments. Be precise and practical.'
+    }
+  ],
+  creative: [
+    {
+      id: 'product-announcement',
+      prompt: 'Write a 100-word product announcement for a developer tool called "PulseDB" that shows real-time query performance heatmaps in the terminal. Tone: enthusiastic but not hypey. Include one concrete example of what a user would see.'
+    },
+    {
+      id: 'error-message',
+      prompt: 'Rewrite this cryptic error into a helpful, actionable message a junior developer could act on: "Error: ECONNREFUSED 127.0.0.1:5432 errno: -111 syscall: connect code: ECONNREFUSED". Include what likely caused it and the first two things to check.'
+    },
+    {
+      id: 'technical-analogy',
+      prompt: 'Explain CPU context switching to someone who has never programmed, using a single concrete analogy from everyday life. Keep it under 80 words and make sure the analogy captures the performance cost.'
+    },
+    {
+      id: 'commit-message',
+      prompt: 'Write a clear and conventional git commit message for a change that adds retry logic with exponential backoff and jitter to the HTTP client. Include a subject line and a 3-bullet body.'
+    },
+    {
+      id: 'doc-summary',
+      prompt: 'Write a one-paragraph README introduction for an open-source CLI tool called "logslice" that extracts time-bounded log windows from large log files without loading them fully into memory. Target audience: backend engineers.'
+    }
   ]
 };
 

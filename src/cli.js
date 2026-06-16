@@ -189,6 +189,9 @@ export function parseArgs(argv) {
         break;
       case '--profile':
         options.profile = requireValue(arg, args);
+        if (!['quick', 'standard', 'interactive', 'throughput', 'client', 'stress', 'reasoning', 'coding', 'creative'].includes(options.profile)) {
+          throw new Error(`--profile must be one of: quick, standard, interactive, throughput, client, stress, reasoning, coding, creative`);
+        }
         break;
       case '-i':
       case '--instructions':
@@ -398,7 +401,7 @@ Run options:
       --slo-tpot-ms <n>     Count request as good only if TPOT is <= n
   -p, --prompt <text>       Prompt to benchmark; repeatable
       --prompt-file <file>  .json, .jsonl, or blank-line separated text prompts
-      --profile <name>      quick, standard, interactive, throughput, client, or stress
+      --profile <name>      quick, standard, interactive, throughput, client, stress, reasoning, coding, or creative
   -i, --instructions <text> Instructions passed to fm respond
       --use-case <case>     Pass a system model use case through to fm
       --guardrails <level>  Pass a system model guardrail level through to fm
