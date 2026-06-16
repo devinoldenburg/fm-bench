@@ -424,13 +424,46 @@ async function runDoctor(options) {
   const major = versionMatch ? Number.parseInt(versionMatch[1].split('.')[0], 10) : null;
   checks.push(['macOS', versionMatch?.[1] || 'unknown', major == null || major >= 27]);
 
+  const hwModel = await runProcess('sysctl', ['-n', 'hw.model'], { timeoutMs: 3_000 });
+  const hwModelStr = (hwModel.stdout || '').trim();
+  if (hwModelStr) checks.push(['hw.model', hwModelStr, true]);
+
+  const cpuBrand = await runProcess('sysctl', ['-n', 'machdep.cpu.brand_string'], { timeoutMs: 3_000 });
+  const cpuBrandStr = (cpuBrand.stdout || '').trim();
+  if (cpuBrandStr) checks.push(['cpu', cpuBrandStr, true]);
+
+  const memBytes = await runProcess('sysctl', ['-n', 'hw.memsize'], { timeoutMs: 3_000 });
+  const memRaw = (memBytes.stdout || '').trim();
+  if (memRaw) {
+    const gb = (Number(memRaw) / (1024 ** 3)).toFixed(0);
+    checks.push(['memory', `${gb} GB`, true]);
+  }
+
+  const thermalResult = await runProcess('pmset', ['-g', 'therm'], { timeoutMs: 5_000 });
+  const thermalOut = (thermalResult.stdout || thermalResult.stderr || '').trim();
+  const thermalMatch = thermalOut.match(/CPU_Scheduler_Limit\s*=\s*(\d+)/);
+  if (thermalMatch) {
+    const limit = Number.parseInt(thermalMatch[1], 10);
+    checks.push(['thermal limit', `${limit}%`, limit >= 100]);
+  }
+
+  const batteryResult = await runProcess('pmset', ['-g', 'batt'], { timeoutMs: 5_000 });
+  const batteryOut = (batteryResult.stdout || '').trim();
+  const batteryLine = batteryOut.split('\n').find((line) => line.includes('%'));
+  if (batteryLine) {
+    const pctMatch = batteryLine.match(/(\d+)%/);
+    const charging = /charging|AC Power|charged/i.test(batteryLine);
+    const pct = pctMatch ? `${pctMatch[1]}%` : '?%';
+    checks.push(['battery', `${pct}${charging ? ' (charging/AC)' : ' (battery)'}`, charging || Number.parseInt(pctMatch?.[1], 10) >= 20]);
+  }
+
   const inspection = await inspectModels(options);
   checks.push(['fm', inspection.fmBin, inspection.models.length > 0]);
   for (const model of inspection.models) {
     checks.push([`model:${model.name}`, model.available ? 'available' : model.reason || 'unavailable', model.available]);
   }
 
-  const lines = checks.map(([name, detail, ok]) => `${ok ? 'ok  ' : 'warn'} ${name.padEnd(14)} ${String(detail).replace(/\s+/g, ' ').trim()}`);
+  const lines = checks.map(([name, detail, ok]) => `${ok ? 'ok  ' : 'warn'} ${name.padEnd(16)} ${String(detail).replace(/\s+/g, ' ').trim()}`);
   console.log(lines.join('\n'));
 
   if (options.out) {
