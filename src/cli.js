@@ -54,6 +54,11 @@ export async function runCli(argv = process.argv.slice(2)) {
     return;
   }
 
+  if (parsed.ci) {
+    if (parsed.color === 'auto') parsed.color = 'never';
+    if (parsed.progress === 'auto') parsed.progress = 'never';
+  }
+
   const progress = createProgress({
     ...renderOptions(parsed),
     enabled: resolveProgress(parsed),
@@ -89,6 +94,44 @@ export async function runCli(argv = process.argv.slice(2)) {
       console.error(`Saved ${reportFormat.toUpperCase()} report to ${written}`);
     }
   }
+
+  if (parsed.ci) {
+    const ciResult = evaluateCi(payload);
+    if (!ciResult.passed) {
+      const reasons = ciResult.reasons.join('; ');
+      console.error(`fm-bench ci: FAIL — ${reasons}`);
+      const error = new Error(`CI checks failed: ${reasons}`);
+      error.exitCode = 1;
+      throw error;
+    }
+    console.error(`fm-bench ci: PASS`);
+  }
+}
+
+function evaluateCi(payload) {
+  const reasons = [];
+  const totalFailed = payload.summary.reduce((sum, item) => sum + item.failures, 0);
+  if (totalFailed > 0) {
+    reasons.push(`${totalFailed} run(s) failed`);
+  }
+
+  const hasSlo = payload.options?.slo && (
+    payload.options.slo.ttftMs || payload.options.slo.e2eMs || payload.options.slo.tpotMs
+  );
+  if (hasSlo) {
+    for (const item of payload.summary) {
+      if (!item.available) continue;
+      if (item.goodputRate != null && item.goodputRate < 1) {
+        const pct = Math.round((1 - item.goodputRate) * 100);
+        reasons.push(`${item.model} c${item.concurrency ?? 1}: ${pct}% of runs violated SLO`);
+      }
+    }
+  }
+
+  return {
+    passed: reasons.length === 0,
+    reasons
+  };
 }
 
 export function parseArgs(argv) {
@@ -115,6 +158,7 @@ export function parseArgs(argv) {
     availableOnly: false,
     failFast: false,
     retry: 0,
+    ci: false,
     verbose: false,
     ascii: false,
     color: 'auto',
@@ -274,6 +318,9 @@ export function parseArgs(argv) {
         break;
       case '--retry':
         options.retry = parseNonNegativeInt(requireValue(arg, args), arg);
+        break;
+      case '--ci':
+        options.ci = true;
         break;
       case '-v':
       case '--verbose':
@@ -471,6 +518,7 @@ Run options:
       --capture-output      Include raw model output in JSON reports
       --fail-fast           Stop after the first failed measured run
       --retry <n>           Retry failed fm calls up to n times with exponential backoff
+      --ci                  Exit 1 if any run fails or any SLO is violated; disables color and progress
 
 Output:
       --format <type>       table, json, or csv (default: table)
