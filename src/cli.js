@@ -6,7 +6,7 @@ import { loadHistory, renderHistoryReport } from './history.js';
 import { runProcess } from './process.js';
 import { createProgress } from './progress.js';
 import { flattenResults, toCsv, writeReport } from './report.js';
-import { legendEntries, renderBenchmarkReport, renderLegend, renderModelsTable } from './table.js';
+import { legendEntries, renderBenchmarkReport, renderLatencyHistogram, renderLegend, renderModelsTable } from './table.js';
 
 const require = createRequire(import.meta.url);
 const packageJson = require('../package.json');
@@ -87,6 +87,10 @@ export async function runCli(argv = process.argv.slice(2)) {
     console.log(toCsv(flattenResults(payload.results)));
   } else {
     console.log(renderBenchmarkReport(payload, renderOptions(parsed)));
+    if (parsed.histogram) {
+      console.log();
+      console.log(renderLatencyHistogram(payload.results, renderOptions(parsed)));
+    }
     if (parsed.verbose) {
       console.log();
       console.log(toCsv(flattenResults(payload.results)));
@@ -184,7 +188,8 @@ export function parseArgs(argv) {
     color: 'auto',
     progress: 'auto',
     compact: false,
-    width: null
+    width: null,
+    histogram: false
   };
 
   const args = [...argv];
@@ -322,6 +327,9 @@ export function parseArgs(argv) {
         break;
       case '--width':
         options.width = parsePositiveInt(requireValue(arg, args), arg);
+        break;
+      case '--histogram':
+        options.histogram = true;
         break;
       case '-o':
       case '--out':
@@ -616,6 +624,7 @@ Output:
       --no-progress         Disable live progress on stderr
       --compact             Force compact terminal layout
       --width <n>           Render for a specific terminal width
+      --histogram           Print an ASCII latency distribution histogram after the report
   -o, --out <file>          Save JSON or CSV report based on file extension
       --output-dir <dir>    Save a timestamped JSON report to a directory automatically
   -v, --verbose             Include per-run CSV after the summary table

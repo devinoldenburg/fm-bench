@@ -125,6 +125,49 @@ export function renderLegend(options = {}) {
   return renderWrappedTable(['table', 'column', 'definition', 'rule'], rows, legendColumnWidths(width), options);
 }
 
+export function renderLatencyHistogram(results, options = {}) {
+  const { ascii = false, color = false, width: termWidth = 80 } = options;
+  const successes = results.filter((r) => r.ok && Number.isFinite(r.durationMs));
+  if (successes.length === 0) return 'No successful results to histogram.';
+
+  const values = successes.map((r) => r.durationMs).sort((a, b) => a - b);
+  const min = values[0];
+  const max = values[values.length - 1];
+
+  if (min === max) {
+    return `E2E latency histogram: all ${values.length} values = ${formatMs(min)}`;
+  }
+
+  const numBuckets = Math.min(20, Math.max(5, Math.floor((termWidth - 20) / 4)));
+  const bucketSize = (max - min) / numBuckets;
+  const counts = new Array(numBuckets).fill(0);
+
+  for (const v of values) {
+    const idx = Math.min(numBuckets - 1, Math.floor((v - min) / bucketSize));
+    counts[idx] += 1;
+  }
+
+  const maxCount = Math.max(...counts);
+  const barWidth = Math.max(1, termWidth - 24);
+  const lines = [];
+  const bar = ascii ? '#' : '█';
+  const halfBar = ascii ? ':' : '▌';
+
+  lines.push(`E2E latency distribution (n=${values.length}, ${formatMs(min)}…${formatMs(max)}):`);
+
+  for (let i = 0; i < numBuckets; i += 1) {
+    const bucketMin = min + i * bucketSize;
+    const bucketMax = bucketMin + bucketSize;
+    const label = `${formatMs(bucketMin)}`.padStart(7);
+    const fillLength = Math.round((counts[i] / maxCount) * barWidth);
+    const filled = bar.repeat(fillLength);
+    const countStr = counts[i] > 0 ? String(counts[i]) : '';
+    lines.push(`${label} ${filled}${countStr ? ` ${countStr}` : ''}`);
+  }
+
+  return lines.join('\n');
+}
+
 export function formatMs(value) {
   if (value == null || !Number.isFinite(value)) return '-';
   if (value >= 1000) return `${(value / 1000).toFixed(2)}s`;
