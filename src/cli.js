@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { inspectModels, runBenchmark } from './bench.js';
 import { diffReports, renderCompareReport } from './compare.js';
+import { loadHistory, renderHistoryReport } from './history.js';
 import { runProcess } from './process.js';
 import { createProgress } from './progress.js';
 import { flattenResults, toCsv, writeReport } from './report.js';
@@ -41,6 +42,11 @@ export async function runCli(argv = process.argv.slice(2)) {
 
   if (parsed.command === 'compare') {
     await runCompare(parsed, renderOptions(parsed));
+    return;
+  }
+
+  if (parsed.command === 'history') {
+    await runHistory(parsed, renderOptions(parsed));
     return;
   }
 
@@ -182,7 +188,7 @@ export function parseArgs(argv) {
   };
 
   const args = [...argv];
-  if (args[0] && !args[0].startsWith('-') && ['run', 'models', 'doctor', 'legend', 'metrics', 'compare', 'help'].includes(args[0])) {
+  if (args[0] && !args[0].startsWith('-') && ['run', 'models', 'doctor', 'legend', 'metrics', 'compare', 'history', 'help'].includes(args[0])) {
     options.command = args.shift();
   }
 
@@ -361,6 +367,8 @@ export function parseArgs(argv) {
         }
         if (options.command === 'compare') {
           options.compareFiles.push(arg);
+        } else if (options.command === 'history') {
+          options.historyDir = arg;
         } else {
           options.prompts.push([arg, ...args].join(' '));
           args.length = 0;
@@ -370,6 +378,23 @@ export function parseArgs(argv) {
   }
 
   return options;
+}
+
+async function runHistory(options, renderOpts) {
+  const dir = options.historyDir || options.outputDir || '.';
+  const reports = await loadHistory(dir);
+
+  if (options.format === 'json') {
+    const data = reports.map(({ filePath, report }) => ({
+      file: filePath,
+      startedAt: report.startedAt,
+      version: report.version,
+      summary: report.summary
+    }));
+    console.log(JSON.stringify(data, null, 2));
+  } else {
+    console.log(renderHistoryReport(reports, renderOpts));
+  }
 }
 
 async function runCompare(options, renderOpts) {
@@ -537,6 +562,7 @@ Usage:
   fm-bench [run] [options]
   fm-bench models [options]
   fm-bench compare <before.json> <after.json> [options]
+  fm-bench history [dir] [options]
   fm-bench legend [options]
   fm-bench doctor [options]
 
@@ -544,6 +570,7 @@ Commands:
   run                  Benchmark discovered or selected fm models
   models               List discovered models and availability
   compare              Compare two saved JSON reports and show metric deltas
+  history              Show a trend table from all fm-bench JSON reports in a directory
   legend               Explain every terminal table column and color rule
   doctor               Check Node, macOS, fm, and model availability
 
@@ -606,6 +633,8 @@ Examples:
   fm-bench --profile reasoning --runs 5 --retry 2
   fm-bench compare before.json after.json
   fm-bench compare before.json after.json --json
+  fm-bench history ./reports
+  fm-bench history ./reports --json
   fm-bench legend
   fm-bench models
   fm-bench doctor
