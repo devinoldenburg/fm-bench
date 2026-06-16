@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { inspectModels, runBenchmark } from './bench.js';
+import { diffReports, renderCompareReport } from './compare.js';
 import { runProcess } from './process.js';
 import { createProgress } from './progress.js';
 import { flattenResults, toCsv, writeReport } from './report.js';
@@ -35,6 +36,11 @@ export async function runCli(argv = process.argv.slice(2)) {
 
   if (parsed.command === 'doctor') {
     await runDoctor(parsed);
+    return;
+  }
+
+  if (parsed.command === 'compare') {
+    await runCompare(parsed, renderOptions(parsed));
     return;
   }
 
@@ -88,6 +94,7 @@ export async function runCli(argv = process.argv.slice(2)) {
 export function parseArgs(argv) {
   const options = {
     command: 'run',
+    compareFiles: [],
     models: [],
     prompts: [],
     runs: 1,
@@ -117,7 +124,7 @@ export function parseArgs(argv) {
   };
 
   const args = [...argv];
-  if (args[0] && !args[0].startsWith('-') && ['run', 'models', 'doctor', 'legend', 'metrics', 'help'].includes(args[0])) {
+  if (args[0] && !args[0].startsWith('-') && ['run', 'models', 'doctor', 'legend', 'metrics', 'compare', 'help'].includes(args[0])) {
     options.command = args.shift();
   }
 
@@ -282,13 +289,58 @@ export function parseArgs(argv) {
         if (arg.startsWith('-')) {
           throw new Error(`Unknown option: ${arg}`);
         }
-        options.prompts.push([arg, ...args].join(' '));
-        args.length = 0;
+        if (options.command === 'compare') {
+          options.compareFiles.push(arg);
+        } else {
+          options.prompts.push([arg, ...args].join(' '));
+          args.length = 0;
+        }
         break;
     }
   }
 
   return options;
+}
+
+async function runCompare(options, renderOpts) {
+  const files = options.compareFiles;
+  if (files.length < 2) {
+    throw new Error('compare requires two JSON report files: fm-bench compare before.json after.json');
+  }
+  if (files.length > 2) {
+    throw new Error('compare accepts exactly two JSON report files');
+  }
+
+  const [beforePath, afterPath] = files;
+  const [beforeText, afterText] = await Promise.all([
+    fs.readFile(beforePath, 'utf8'),
+    fs.readFile(afterPath, 'utf8')
+  ]);
+
+  let before, after;
+  try {
+    before = JSON.parse(beforeText);
+  } catch {
+    throw new Error(`Cannot parse ${beforePath} as JSON`);
+  }
+  try {
+    after = JSON.parse(afterText);
+  } catch {
+    throw new Error(`Cannot parse ${afterPath} as JSON`);
+  }
+
+  const diff = diffReports(before, after);
+
+  if (options.format === 'json') {
+    console.log(JSON.stringify(diff, null, 2));
+  } else {
+    console.log(renderCompareReport(diff, renderOpts));
+  }
+
+  if (options.out) {
+    await fs.writeFile(options.out, `${JSON.stringify(diff, null, 2)}\n`, 'utf8');
+    console.error(`Saved compare report to ${options.out}`);
+  }
 }
 
 async function runDoctor(options) {
@@ -381,12 +433,14 @@ Dynamic benchmark CLI for Apple's fm command on macOS 27+.
 Usage:
   fm-bench [run] [options]
   fm-bench models [options]
+  fm-bench compare <before.json> <after.json> [options]
   fm-bench legend [options]
   fm-bench doctor [options]
 
 Commands:
   run                  Benchmark discovered or selected fm models
   models               List discovered models and availability
+  compare              Compare two saved JSON reports and show metric deltas
   legend               Explain every terminal table column and color rule
   doctor               Check Node, macOS, fm, and model availability
 
@@ -442,6 +496,9 @@ Examples:
   fm-bench --models system,pcc --runs 3 --profile stress
   fm-bench --profile client --sweep-concurrency 1,2 --request-rate 0.5
   fm-bench --prompt "Reply with exactly: ok" --json --out bench.json
+  fm-bench --profile reasoning --runs 5 --retry 2
+  fm-bench compare before.json after.json
+  fm-bench compare before.json after.json --json
   fm-bench legend
   fm-bench models
   fm-bench doctor
