@@ -6,6 +6,20 @@ It discovers the models reported by `fm --help`, checks availability with `fm av
 
 Apple introduced the preinstalled `fm` command for macOS 27 as part of the Foundation Models tooling. `fm-bench` intentionally shells out to the system `fm` binary instead of linking private APIs, so it can adapt as Apple adds models or changes availability.
 
+## Why fm-bench exists
+
+Apple's Foundation Models can run on-device, through Private Cloud Compute, and through model adapters. That makes raw model quality only half the story.
+
+For real apps, the important questions are:
+
+- How fast does the first token arrive?
+- Does streaming stay smooth?
+- How stable is latency over repeated runs?
+- What happens under concurrency?
+- Which model/hardware pair meets an interactive SLO?
+
+`fm-bench` answers those questions with repeatable local benchmarks.
+
 ## Install
 
 ```sh
