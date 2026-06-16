@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.5.0
+
+- Added `compare` command: diff two saved JSON reports side-by-side with absolute and percent change for every latency, throughput, and reliability metric. Lower-is-better coloring for latency and CV; higher-is-better for throughput.
+- Added `history` command: scan a directory for fm-bench JSON reports and display a chronological trend table. Pairs with `--output-dir` to build a persistent benchmark archive.
+- Added three new prompt profiles:
+  - `reasoning`: five prompts covering multi-step math, logic sequences, causal chains, Fermi estimation, and code debugging.
+  - `coding`: five prompts covering code review, refactoring, algorithms, code explanation, and system design.
+  - `creative`: five prompts covering product announcements, error message rewrites, technical analogies, commit messages, and doc summaries.
+- Added `--retry <n>`: automatically retry failed `fm respond` calls up to `n` times with exponential backoff (500ms, 1s, 2s, up to 4s cap).
+- Added `--ci`: disables color and progress output, then exits with code 1 if any measured run fails or any SLO budget is violated. Prints a `PASS`/`FAIL` summary line to stderr. Designed for GitHub Actions and other CI pipelines.
+- Added `--tag <name>` (repeatable) and `--note <text>`: metadata attached to the JSON payload and printed in the table report header for self-describing reports.
+- Added `--output-dir <dir>`: automatically save a timestamped JSON report (`fm-bench_<timestamp>_<model>.json`) to the given directory on every run.
+- Added `--histogram`: print an ASCII latency distribution bar chart (up to 20 buckets, auto-sized to terminal width) after the main report.
+- Enhanced `doctor` command: now also reports hardware model (`hw.model`), CPU brand string, total memory in GB, thermal throttle limit via `pmset -g therm` (warns when below 100%), and battery percentage and charging state via `pmset -g batt`.
+
 ## 0.4.4
 
 - Wrapped long benchmark `NOTE`, `DESCRIPTION`, model description, and quota cells instead of truncating them with ellipses.
