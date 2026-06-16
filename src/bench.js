@@ -229,11 +229,18 @@ async function runScenario(context) {
 }
 
 async function runSingleBenchmark(fmBin, job, promptTokenCounts, options, benchmarkStartedAt) {
+  const maxAttempts = 1 + Math.max(0, options.retry ?? 0);
   const startOffsetMs = Number(process.hrtime.bigint() - benchmarkStartedAt) / 1e6;
-  const response = await respond(fmBin, job.model.name, job.prompt.prompt, {
-    ...options,
-    stream: options.stream
-  });
+  let response;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    response = await respond(fmBin, job.model.name, job.prompt.prompt, {
+      ...options,
+      stream: options.stream
+    });
+    if (response.ok || attempt >= maxAttempts) break;
+    const backoffMs = Math.min(500 * 2 ** (attempt - 1), 4000);
+    await new Promise((resolve) => setTimeout(resolve, backoffMs));
+  }
   const endOffsetMs = Number(process.hrtime.bigint() - benchmarkStartedAt) / 1e6;
   const outputTokens = response.ok
     ? await countTokens(fmBin, response.output, options)
@@ -338,7 +345,8 @@ function publicOptions(options) {
       e2eMs: options.sloE2eMs || null,
       tpotMs: options.sloTpotMs || null
     },
-    instructions: options.instructions ? '[set]' : ''
+    instructions: options.instructions ? '[set]' : '',
+    retry: options.retry ?? 0
   };
 }
 

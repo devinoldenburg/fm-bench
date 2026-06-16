@@ -107,6 +107,7 @@ export function parseArgs(argv) {
     captureOutput: false,
     availableOnly: false,
     failFast: false,
+    retry: 0,
     verbose: false,
     ascii: false,
     color: 'auto',
@@ -264,6 +265,9 @@ export function parseArgs(argv) {
       case '--fail-fast':
         options.failFast = true;
         break;
+      case '--retry':
+        options.retry = parseNonNegativeInt(requireValue(arg, args), arg);
+        break;
       case '-v':
       case '--verbose':
         options.verbose = true;
@@ -412,6 +416,7 @@ Run options:
       --available-only      Hide unavailable discovered models
       --capture-output      Include raw model output in JSON reports
       --fail-fast           Stop after the first failed measured run
+      --retry <n>           Retry failed fm calls up to n times with exponential backoff
 
 Output:
       --format <type>       table, json, or csv (default: table)
