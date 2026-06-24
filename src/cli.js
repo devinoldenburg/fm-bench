@@ -6,6 +6,7 @@ import { loadHistory, renderHistoryReport } from './history.js';
 import { runProcess } from './process.js';
 import { createProgress } from './progress.js';
 import { flattenResults, toCsv, writeReport } from './report.js';
+import { parseBatteryOutput, parseThermalOutput } from './system.js';
 import { legendEntries, renderBenchmarkReport, renderLatencyHistogram, renderLegend, renderModelsTable } from './table.js';
 
 const require = createRequire(import.meta.url);
@@ -473,21 +474,23 @@ async function runDoctor(options) {
   }
 
   const thermalResult = await runProcess('pmset', ['-g', 'therm'], { timeoutMs: 5_000 });
-  const thermalOut = (thermalResult.stdout || thermalResult.stderr || '').trim();
-  const thermalMatch = thermalOut.match(/CPU_Scheduler_Limit\s*=\s*(\d+)/);
-  if (thermalMatch) {
-    const limit = Number.parseInt(thermalMatch[1], 10);
+  const thermal = parseThermalOutput(`${thermalResult.stdout || ''}${thermalResult.stderr || ''}`);
+  if (thermal.available && thermal.schedulerLimit != null) {
+    const limit = thermal.schedulerLimit;
     checks.push(['thermal limit', `${limit}%`, limit >= 100]);
+  } else if (thermal.available && thermal.healthyIdle) {
+    checks.push(['thermal', 'no thermal pressure', true]);
+  } else if (!thermal.available) {
+    checks.push(['thermal', 'unavailable', true]);
   }
 
   const batteryResult = await runProcess('pmset', ['-g', 'batt'], { timeoutMs: 5_000 });
-  const batteryOut = (batteryResult.stdout || '').trim();
-  const batteryLine = batteryOut.split('\n').find((line) => line.includes('%'));
-  if (batteryLine) {
-    const pctMatch = batteryLine.match(/(\d+)%/);
-    const charging = /charging|AC Power|charged/i.test(batteryLine);
-    const pct = pctMatch ? `${pctMatch[1]}%` : '?%';
-    checks.push(['battery', `${pct}${charging ? ' (charging/AC)' : ' (battery)'}`, charging || Number.parseInt(pctMatch?.[1], 10) >= 20]);
+  const battery = parseBatteryOutput(`${batteryResult.stdout || ''}${batteryResult.stderr || ''}`);
+  if (battery.present) {
+    const pct = battery.pct != null ? `${battery.pct}%` : '?%';
+    const source = battery.onAC ? 'charging/AC' : 'battery';
+    const ok = battery.onAC || (battery.pct != null && battery.pct >= 20);
+    checks.push(['battery', `${pct} (${source})`, ok]);
   }
 
   const inspection = await inspectModels(options);
