@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.2
+
+- Fixed `doctor` thermal and battery checks on macOS 27, where `pmset -g therm` no longer emits `CPU_Scheduler_Limit` and `pmset -g batt` reports AC power on a separate line. Thermal state is now parsed via dedicated helpers that recognise both the legacy numeric form and the macOS 27 informational `Note:` lines, and the healthy idle state is reported explicitly as "no thermal pressure" instead of being silently dropped.
+- Battery parsing now understands both the macOS 27 `AC attached; not charging` form and the legacy `AC Power` / `discharging` wording.
+- Added `src/system.js` with `parseThermalOutput` and `parseBatteryOutput`, plus unit tests covering legacy and macOS 27 outputs.
+
 ## 0.5.1
 
 - Repositioned README as the GeekBench for Apple Foundation Models.
