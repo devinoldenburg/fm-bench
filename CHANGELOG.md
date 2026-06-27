@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.1
+
+- **Release** workflow: GitHub release bodies are generated from `CHANGELOG.md` (not empty auto-notes). Re-running Release on an existing tag updates release notes.
+
 ## 0.6.0
 
 - **Report schema v1**: JSON reports include `schemaVersion`, `reportId`, and a `suite` block (profile, prompt count, environment fingerprint) for shareable, comparable benchmarks.

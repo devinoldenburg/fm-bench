@@ -1,6 +1,6 @@
 # Releasing
 
-`fm-bench` uses semver tags (`v*.*.*`). Pushing a tag runs the **Release** workflow: test, lint, npm publish (with provenance), and GitHub release notes.
+`fm-bench` uses semver tags (`v*.*.*`). Pushing a tag runs the **Release** workflow: test, lint, npm publish (with provenance), and a GitHub release whose body is taken from the matching section in **`CHANGELOG.md`** (plus a compare link).
 
 ## Prerequisites
 
@@ -24,7 +24,14 @@ git push --follow-tags
 
 ## Re-run Release without republishing
 
-If npm already has the version but GitHub release failed (or vice versa), use **Actions → Release → Run workflow** and enter the existing tag (for example `v0.5.3`). The workflow skips npm publish when that version is already on the registry and skips creating a duplicate GitHub release.
+If npm already has the version but GitHub release failed (or vice versa), use **Actions → Release → Run workflow** and enter the existing tag (for example `v0.5.3`). The workflow skips npm publish when that version is already on the registry. If the GitHub release already exists, it **updates the release notes** from `CHANGELOG.md`.
+
+Refresh notes locally without re-publishing:
+
+```sh
+node scripts/changelog-release-notes.mjs 0.6.0 > /tmp/notes.md
+gh release edit v0.6.0 --notes-file /tmp/notes.md --repo devinoldenburg/fm-bench
+```
 
 ## Dry run
 

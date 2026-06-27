@@ -77,8 +77,14 @@ jobs:
         run: |
           set -euo pipefail
           tag="$RELEASE_TAG"
+          ver="${tag#v}"
+          notes="$(node scripts/changelog-release-notes.mjs "$ver")"
+          notes_file="$(mktemp)"
+          printf '%s' "$notes" > "$notes_file"
           if gh release view "$tag" >/dev/null 2>&1; then
-            echo "GitHub release $tag already exists — skipping create."
+            echo "GitHub release $tag already exists — updating notes from CHANGELOG.md."
+            gh release edit "$tag" --notes-file "$notes_file" --title "$tag"
           else
-            gh release create "$tag" --verify-tag --generate-notes --title "$tag"
+            gh release create "$tag" --verify-tag --title "$tag" --notes-file "$notes_file"
           fi
+          rm -f "$notes_file"
