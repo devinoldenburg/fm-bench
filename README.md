@@ -1,5 +1,7 @@
 # fm-bench
 
+[![CI](https://github.com/devinoldenburg/fm-bench/actions/workflows/ci.yml/badge.svg)](https://github.com/devinoldenburg/fm-bench/actions/workflows/ci.yml)
+
 Benchmark Apple's `fm` command on macOS 27+.
 
 Measure latency, throughput, streaming smoothness, stability, and goodput across Apple Foundation Models — with repeatable prompt suites and JSON/CSV reports for automation.

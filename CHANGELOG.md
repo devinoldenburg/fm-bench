@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.3
+
+- Hardened **Release** workflow: skip npm publish when the version is already on the registry (safe to re-run after partial failures), verify `package.json` version matches the git tag, and skip duplicate GitHub releases.
+- **CI** now runs `npm run publish:dry-run`, uses concurrency groups to cancel superseded runs, and documents release steps in `docs/releasing.md`.
+- **Version** workflow pushes explicitly to `main` with concurrency protection.
+- Added Dependabot for GitHub Actions and a CI status badge on the README.
+- Normalized `package.json` `bin` path for npm publish (`npm pkg fix`).
+
 ## 0.5.2
 
 - Fixed `doctor` thermal and battery checks on macOS 27, where `pmset -g therm` no longer emits `CPU_Scheduler_Limit` and `pmset -g batt` reports AC power on a separate line. Thermal state is now parsed via dedicated helpers that recognise both the legacy numeric form and the macOS 27 informational `Note:` lines, and the healthy idle state is reported explicitly as "no thermal pressure" instead of being silently dropped.

@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -21,3 +25,4 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run lint
+      - run: npm run publish:dry-run

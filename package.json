@@ -1,10 +1,10 @@
 {
   "name": "fm-bench",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "Dynamic benchmark CLI for Apple's fm command on macOS 27+.",
   "type": "module",
   "bin": {
-    "fm-bench": "./bin/fm-bench.js"
+    "fm-bench": "bin/fm-bench.js"
   },
   "files": [
     "bin",

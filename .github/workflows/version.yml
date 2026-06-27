@@ -8,6 +8,10 @@ on:
         required: true
         default: patch
 
+concurrency:
+  group: version-${{ github.repository }}
+  cancel-in-progress: false
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -21,15 +25,19 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          ref: main
+
       - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
+
       - run: npm ci
       - run: npm test
       - run: npm run lint
+
       - run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           npm version "${{ inputs.version }}" -m "Release %s"
-          git push --follow-tags
+          git push origin HEAD:main --follow-tags

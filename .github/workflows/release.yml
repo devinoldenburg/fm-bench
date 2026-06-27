@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing tag to publish, for example v0.1.0"
+        description: "Existing tag to publish, for example v0.5.3"
         required: true
 
 env:
@@ -25,21 +25,60 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.event.inputs.tag || github.ref }}
+
       - uses: actions/setup-node@v6
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org/
           cache: npm
+
       - run: npm ci
       - run: npm test
       - run: npm run lint
-      - run: npm publish --access public --provenance
+
+      - name: Resolve release version
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            ver="${{ github.event.inputs.tag }}"
+          else
+            ver="${GITHUB_REF_NAME}"
+          fi
+          ver="${ver#v}"
+          echo "semver=$ver" >> "$GITHUB_OUTPUT"
+          echo "Release version: $ver"
+
+      - name: Verify package.json matches tag
+        run: |
+          set -euo pipefail
+          expected="${{ steps.version.outputs.semver }}"
+          actual="$(node --eval "import { readFileSync } from 'node:fs'; console.log(JSON.parse(readFileSync('package.json','utf8')).version)")"
+          if [ "$actual" != "$expected" ]; then
+            echo "package.json version ($actual) does not match tag ($expected)"
+            exit 1
+          fi
+
+      - name: Publish to npm
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          ver="${{ steps.version.outputs.semver }}"
+          if npm view "fm-bench@${ver}" version 2>/dev/null | grep -qx "$ver"; then
+            echo "fm-bench@${ver} is already on npm — skipping publish."
+          else
+            npm publish --access public --provenance
+          fi
+
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
-          gh release view "$RELEASE_TAG" >/dev/null 2>&1 || \
-            gh release create "$RELEASE_TAG" --verify-tag --generate-notes --title "$RELEASE_TAG"
+          set -euo pipefail
+          tag="$RELEASE_TAG"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "GitHub release $tag already exists — skipping create."
+          else
+            gh release create "$tag" --verify-tag --generate-notes --title "$tag"
+          fi
