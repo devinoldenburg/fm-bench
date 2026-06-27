@@ -1,0 +1,45 @@
+{
+  "tool": "fm-bench",
+  "version": "0.6.0",
+  "schemaVersion": "1",
+  "reportId": "abc123",
+  "startedAt": "2026-06-27T12:00:00.000Z",
+  "finishedAt": "2026-06-27T12:01:00.000Z",
+  "options": {
+    "profile": "standard",
+    "runs": 3,
+    "warmup": 0,
+    "concurrency": 1,
+    "sweepConcurrency": [],
+    "stream": true,
+    "greedy": true,
+    "tags": ["before"],
+    "note": null
+  },
+  "environment": {
+    "platform": "darwin",
+    "arch": "arm64",
+    "hwModel": "Mac15,7",
+    "macOS": "ProductVersion:\t27.0\nBuildVersion:\t25A123"
+  },
+  "prompts": [
+    { "id": "short", "prompt": "Hi", "promptTokens": 2 },
+    { "id": "json", "prompt": "JSON", "promptTokens": 4 },
+    { "id": "medium", "prompt": "Explain", "promptTokens": 8 }
+  ],
+  "summary": [
+    {
+      "model": "system",
+      "concurrency": 1,
+      "available": true,
+      "successes": 9,
+      "failures": 0,
+      "successRate": 1,
+      "goodputRate": 0.9,
+      "ttft": { "p50": 300, "p95": 400 },
+      "latency": { "p50": 2000, "p95": 3200, "cv": 0.12 },
+      "tokensPerSecond": { "avg": 42 }
+    }
+  ],
+  "results": []
+}

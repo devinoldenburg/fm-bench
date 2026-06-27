@@ -49,3 +49,12 @@ test('parseArgs supports disabling progress', () => {
   const args = parseArgs(['--no-progress']);
   assert.equal(args.progress, 'never');
 });
+
+test('parseArgs supports validate export compare strict and export-html', () => {
+  assert.equal(parseArgs(['validate', 'a.json']).command, 'validate');
+  assert.deepEqual(parseArgs(['validate', 'a.json']).validateFiles, ['a.json']);
+  assert.equal(parseArgs(['export', 'a.json']).command, 'export');
+  const run = parseArgs(['--export-html', '--strict']);
+  assert.equal(run.exportHtml, true);
+  assert.equal(run.strictCompare, true);
+});

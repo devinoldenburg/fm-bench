@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.6.0
+
+- **Report schema v1**: JSON reports include `schemaVersion`, `reportId`, and a `suite` block (profile, prompt count, environment fingerprint) for shareable, comparable benchmarks.
+- **Richer `environment` in every run**: hardware model, CPU, memory, thermal/power snapshot, and a short `fm --help` digest (matches what `doctor` already probes).
+- **`validate` command**: verify one or more report JSON files before sharing or CI ingestion.
+- **`export` command** and **`--export-html`**: standalone HTML reports with embedded JSON for humans and automation.
+- **`compare` improvements**: compatibility warnings for mismatched suites, hardware, or macOS; `--strict` exits 2 when suites differ; metadata shows tags and hardware.
+- **`history` improvements**: sort by `startedAt`, show tag/note/profile column.
+- **`--output-dir`**: optional tag suffix in filenames; pair JSON + HTML with `--export-html`.
+- **`--out`**: `.html` extension writes a shareable HTML report.
+- Documentation: [docs/report-format.md](docs/report-format.md), updated README and methodology cross-links.
+- Tests for schema, compare compatibility, and HTML export.
+
 ## 0.5.3
 
 - Hardened **Release** workflow: skip npm publish when the version is already on the registry (safe to re-run after partial failures), verify `package.json` version matches the git tag, and skip duplicate GitHub releases.

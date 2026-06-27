@@ -1,6 +1,8 @@
+import crypto from 'node:crypto';
 import os from 'node:os';
 import { stripAnsi } from './ansi.js';
 import { runProcess } from './process.js';
+import { parseBatteryOutput, parseThermalOutput } from './system.js';
 
 const DEFAULT_MODELS = [
   { name: 'system', description: 'On-device Apple Foundation Model' },
@@ -183,13 +185,56 @@ export async function respond(fmBin, model, prompt, options = {}) {
 
 export async function collectEnvironment(fmBin) {
   const swVers = await runProcess('sw_vers', [], { timeoutMs: 5_000 });
+  const macOS = stripAnsi(swVers.stdout).trim() || null;
+
+  const hwModel = await runProcess('sysctl', ['-n', 'hw.model'], { timeoutMs: 3_000 });
+  const cpuBrand = await runProcess('sysctl', ['-n', 'machdep.cpu.brand_string'], { timeoutMs: 3_000 });
+  const memBytes = await runProcess('sysctl', ['-n', 'hw.memsize'], { timeoutMs: 3_000 });
+
+  const thermalResult = await runProcess('pmset', ['-g', 'therm'], { timeoutMs: 5_000 });
+  const thermal = parseThermalOutput(`${thermalResult.stdout || ''}${thermalResult.stderr || ''}`);
+  const batteryResult = await runProcess('pmset', ['-g', 'batt'], { timeoutMs: 5_000 });
+  const battery = parseBatteryOutput(`${batteryResult.stdout || ''}${batteryResult.stderr || ''}`);
+
+  let fmHelpDigest = null;
+  try {
+    const help = await getFmHelp(fmBin, 10_000);
+    const text = stripAnsi(help.text).trim();
+    if (text) {
+      fmHelpDigest = crypto.createHash('sha256').update(text).digest('hex').slice(0, 16);
+    }
+  } catch {
+    fmHelpDigest = null;
+  }
+
+  const memRaw = (memBytes.stdout || '').trim();
+  const memoryGb = memRaw && Number.isFinite(Number(memRaw))
+    ? Math.round(Number(memRaw) / (1024 ** 3))
+    : null;
+
   return {
     platform: process.platform,
     arch: process.arch,
     node: process.version,
     host: os.hostname(),
     fmBin,
-    macOS: stripAnsi(swVers.stdout).trim() || null
+    macOS,
+    hwModel: (hwModel.stdout || '').trim() || null,
+    cpuBrand: (cpuBrand.stdout || '').trim() || null,
+    memoryGb,
+    fmHelpDigest,
+    thermal: thermal.available
+      ? {
+        schedulerLimit: thermal.schedulerLimit,
+        healthyIdle: Boolean(thermal.healthyIdle)
+      }
+      : null,
+    power: battery.present
+      ? {
+        pct: battery.pct,
+        onAC: battery.onAC
+      }
+      : null
   };
 }
 

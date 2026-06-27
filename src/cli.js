@@ -2,6 +2,8 @@ import fs from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { inspectModels, runBenchmark } from './bench.js';
 import { diffReports, renderCompareReport } from './compare.js';
+import { renderHtmlReport } from './export.js';
+import { validateReport } from './schema.js';
 import { loadHistory, renderHistoryReport } from './history.js';
 import { runProcess } from './process.js';
 import { createProgress } from './progress.js';
@@ -43,6 +45,16 @@ export async function runCli(argv = process.argv.slice(2)) {
 
   if (parsed.command === 'compare') {
     await runCompare(parsed, renderOptions(parsed));
+    return;
+  }
+
+  if (parsed.command === 'validate') {
+    await runValidate(parsed);
+    return;
+  }
+
+  if (parsed.command === 'export') {
+    await runExport(parsed);
     return;
   }
 
@@ -99,7 +111,9 @@ export async function runCli(argv = process.argv.slice(2)) {
   }
 
   if (parsed.out) {
-    const reportFormat = parsed.out.endsWith('.csv') ? 'csv' : 'json';
+    const reportFormat = parsed.out.endsWith('.csv') ? 'csv'
+      : parsed.out.endsWith('.html') ? 'html'
+        : 'json';
     const written = await writeReport(parsed.out, payload, reportFormat);
     if (parsed.format !== 'json') {
       console.error(`Saved ${reportFormat.toUpperCase()} report to ${written}`);
@@ -110,9 +124,17 @@ export async function runCli(argv = process.argv.slice(2)) {
     const stamp = payload.startedAt.replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);
     const firstModel = parsed.models?.flatMap((m) => String(m).split(',')).map((m) => m.trim()).filter(Boolean)[0] || 'all';
     const modelSlug = firstModel.replace(/[^a-z0-9]/gi, '_');
-    const filename = `fm-bench_${stamp}_${modelSlug}.json`;
-    const filePath = `${parsed.outputDir}/${filename}`;
-    const written = await writeReport(filePath, payload, 'json');
+    const tagSlug = parsed.tags?.length ? `_${parsed.tags.join('-').replace(/[^a-z0-9-]/gi, '_')}` : '';
+    const base = `fm-bench_${stamp}_${modelSlug}${tagSlug}`;
+    const jsonPath = `${parsed.outputDir}/${base}.json`;
+    const written = await writeReport(jsonPath, payload, 'json');
+    if (parsed.exportHtml) {
+      const htmlPath = `${parsed.outputDir}/${base}.html`;
+      await writeReport(htmlPath, payload, 'html');
+      if (parsed.format !== 'json') {
+        console.error(`Saved HTML report to ${htmlPath}`);
+      }
+    }
     if (parsed.format !== 'json') {
       console.error(`Saved JSON report to ${written}`);
     }
@@ -190,11 +212,14 @@ export function parseArgs(argv) {
     progress: 'auto',
     compact: false,
     width: null,
-    histogram: false
+    histogram: false,
+    exportHtml: false,
+    strictCompare: false,
+    validateFiles: []
   };
 
   const args = [...argv];
-  if (args[0] && !args[0].startsWith('-') && ['run', 'models', 'doctor', 'legend', 'metrics', 'compare', 'history', 'help'].includes(args[0])) {
+  if (args[0] && !args[0].startsWith('-') && ['run', 'models', 'doctor', 'legend', 'metrics', 'compare', 'history', 'validate', 'export', 'help'].includes(args[0])) {
     options.command = args.shift();
   }
 
@@ -332,6 +357,12 @@ export function parseArgs(argv) {
       case '--histogram':
         options.histogram = true;
         break;
+      case '--export-html':
+        options.exportHtml = true;
+        break;
+      case '--strict':
+        options.strictCompare = true;
+        break;
       case '-o':
       case '--out':
         options.out = requireValue(arg, args);
@@ -378,6 +409,8 @@ export function parseArgs(argv) {
           options.compareFiles.push(arg);
         } else if (options.command === 'history') {
           options.historyDir = arg;
+        } else if (options.command === 'validate' || options.command === 'export') {
+          options.validateFiles.push(arg);
         } else {
           options.prompts.push([arg, ...args].join(' '));
           args.length = 0;
@@ -444,6 +477,75 @@ async function runCompare(options, renderOpts) {
   if (options.out) {
     await fs.writeFile(options.out, `${JSON.stringify(diff, null, 2)}\n`, 'utf8');
     console.error(`Saved compare report to ${options.out}`);
+  }
+
+  if (options.strictCompare && diff.compatibility && !diff.compatibility.suiteMatch) {
+    const error = new Error('compare: benchmark suites differ (--strict)');
+    error.exitCode = 2;
+    throw error;
+  }
+}
+
+async function runValidate(options) {
+  const files = options.validateFiles;
+  if (files.length === 0) {
+    throw new Error('validate requires at least one JSON report: fm-bench validate report.json');
+  }
+
+  let failed = 0;
+  for (const filePath of files) {
+    let parsed;
+    try {
+      const text = await fs.readFile(filePath, 'utf8');
+      parsed = JSON.parse(text);
+    } catch {
+      console.error(`invalid  ${filePath}  (cannot read or parse JSON)`);
+      failed += 1;
+      continue;
+    }
+    const result = validateReport(parsed);
+    if (result.ok) {
+      const id = result.report.reportId ?? '—';
+      const schema = result.report.schemaVersion ?? 'legacy';
+      console.log(`ok       ${filePath}  schema=${schema} id=${id}`);
+    } else {
+      console.error(`invalid  ${filePath}  ${result.errors.join('; ')}`);
+      failed += 1;
+    }
+  }
+
+  if (failed > 0) {
+    const error = new Error(`${failed} report(s) failed validation`);
+    error.exitCode = 1;
+    throw error;
+  }
+}
+
+async function runExport(options) {
+  const files = options.validateFiles;
+  if (files.length === 0) {
+    throw new Error('export requires a JSON report: fm-bench export report.json [-o out.html]');
+  }
+
+  const filePath = files[0];
+  const text = await fs.readFile(filePath, 'utf8');
+  let report;
+  try {
+    report = JSON.parse(text);
+  } catch {
+    throw new Error(`Cannot parse ${filePath} as JSON`);
+  }
+  const validation = validateReport(report);
+  if (!validation.ok) {
+    throw new Error(`Not a valid fm-bench report: ${validation.errors.join('; ')}`);
+  }
+
+  const html = renderHtmlReport(validation.report);
+  if (options.out) {
+    await fs.writeFile(options.out, html, 'utf8');
+    console.error(`Wrote HTML to ${options.out}`);
+  } else {
+    console.log(html);
   }
 }
 
@@ -574,6 +676,8 @@ Usage:
   fm-bench models [options]
   fm-bench compare <before.json> <after.json> [options]
   fm-bench history [dir] [options]
+  fm-bench validate <report.json> [more...]
+  fm-bench export <report.json> [-o report.html]
   fm-bench legend [options]
   fm-bench doctor [options]
 
@@ -582,6 +686,8 @@ Commands:
   models               List discovered models and availability
   compare              Compare two saved JSON reports and show metric deltas
   history              Show a trend table from all fm-bench JSON reports in a directory
+  validate             Verify report JSON structure (schema v1)
+  export               Render a shareable standalone HTML report from JSON
   legend               Explain every terminal table column and color rule
   doctor               Check Node, macOS, fm, and model availability
 
@@ -628,9 +734,13 @@ Output:
       --compact             Force compact terminal layout
       --width <n>           Render for a specific terminal width
       --histogram           Print an ASCII latency distribution histogram after the report
-  -o, --out <file>          Save JSON or CSV report based on file extension
+  -o, --out <file>          Save JSON, CSV, or HTML report based on file extension
       --output-dir <dir>    Save a timestamped JSON report to a directory automatically
+      --export-html         With --output-dir, also write a matching .html report
   -v, --verbose             Include per-run CSV after the summary table
+
+Compare:
+      --strict                Exit 2 when before/after benchmark suites differ
 
 Environment:
       --fm-bin <path>       fm binary to execute (default: FM_BIN or fm)
@@ -645,6 +755,10 @@ Examples:
   fm-bench --profile reasoning --runs 5 --retry 2
   fm-bench compare before.json after.json
   fm-bench compare before.json after.json --json
+  fm-bench compare before.json after.json --strict
+  fm-bench validate reports/*.json
+  fm-bench export bench.json -o bench.html
+  fm-bench --output-dir reports/ --export-html --tag nightly
   fm-bench history ./reports
   fm-bench history ./reports --json
   fm-bench legend

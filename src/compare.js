@@ -1,6 +1,8 @@
+import { compareCompatibility } from './schema.js';
 import { formatMs, formatNumber, formatPercent } from './table.js';
 
 export function diffReports(before, after) {
+  const compatibility = compareCompatibility(before, after);
   const beforeByKey = indexSummary(before.summary ?? []);
   const afterByKey = indexSummary(after.summary ?? []);
 
@@ -16,18 +18,28 @@ export function diffReports(before, after) {
   return {
     before: reportMeta(before),
     after: reportMeta(after),
+    compatibility,
     rows
   };
 }
 
 function reportMeta(report) {
+  const tags = report.options?.tags;
   return {
     version: report.version ?? '?',
+    schemaVersion: report.schemaVersion ?? null,
+    reportId: report.reportId ?? null,
     startedAt: report.startedAt ?? '',
     finishedAt: report.finishedAt ?? '',
     runs: report.options?.runs ?? null,
     profile: report.options?.profile ?? null,
-    concurrency: report.options?.concurrency ?? null
+    concurrency: report.options?.concurrency ?? null,
+    tags: Array.isArray(tags) ? tags : [],
+    note: report.options?.note ?? null,
+    hwModel: report.environment?.hwModel ?? report.suite?.fingerprint?.hwModel ?? null,
+    macOS: report.suite?.fingerprint?.macOSProductVersion
+      ?? report.environment?.macOS?.match(/ProductVersion:\s*([^\n]+)/)?.[1]?.trim()
+      ?? null
   };
 }
 
@@ -122,8 +134,20 @@ export function renderCompareReport(diff, options = {}) {
   const afterLabel = `${diff.after.version}  ${diff.after.startedAt ? diff.after.startedAt.slice(0, 19).replace('T', ' ') : '?'}`;
 
   lines.push(`fm-bench compare`);
-  lines.push(`  before: ${beforeLabel}`);
-  lines.push(`  after:  ${afterLabel}`);
+  lines.push(`  before: ${beforeLabel}${diff.before.hwModel ? ` | ${diff.before.hwModel}` : ''}`);
+  lines.push(`  after:  ${afterLabel}${diff.after.hwModel ? ` | ${diff.after.hwModel}` : ''}`);
+  if (diff.before.profile || diff.after.profile) {
+    lines.push(`  suite:  profile=${diff.before.profile ?? '?'} runs=${diff.before.runs ?? '?'} (before) → profile=${diff.after.profile ?? '?'} runs=${diff.after.runs ?? '?'}`);
+  }
+  const compat = diff.compatibility;
+  if (compat?.warnings?.length) {
+    for (const w of compat.warnings) {
+      lines.push(`  warn:   ${w}`);
+    }
+  }
+  if (compat && !compat.suiteMatch) {
+    lines.push('  note:   use identical --profile, --runs, and prompts for apples-to-apples comparison');
+  }
   lines.push('');
 
   const colWidths = [8, 3, 10, 10, 10, 10, 10, 10, 8, 8, 9, 7, 7];

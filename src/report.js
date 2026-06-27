@@ -43,9 +43,15 @@ export function flattenResults(results) {
 export async function writeReport(filePath, payload, format) {
   const target = path.resolve(filePath);
   await fs.mkdir(path.dirname(target), { recursive: true });
-  const content = format === 'csv'
-    ? toCsv(flattenResults(payload.results))
-    : `${JSON.stringify(payload, null, 2)}\n`;
+  let content;
+  if (format === 'csv') {
+    content = toCsv(flattenResults(payload.results));
+  } else if (format === 'html') {
+    const { renderHtmlReport } = await import('./export.js');
+    content = renderHtmlReport(payload);
+  } else {
+    content = `${JSON.stringify(payload, null, 2)}\n`;
+  }
   await fs.writeFile(target, content, 'utf8');
   return target;
 }

@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { checkModelAvailability, collectEnvironment, countTokens, discoverModels, getQuotaUsage, respond } from './fm.js';
 import { loadPrompts } from './prompts.js';
+import { finalizeReportPayload } from './schema.js';
 import { summarizeByModel } from './stats.js';
 
 export async function inspectModels(options = {}) {
@@ -115,7 +116,7 @@ export async function runBenchmark(options = {}) {
     || a.run - b.run);
 
   const summary = summarizeByModel(results, modelStatuses, { concurrencies });
-  const payload = {
+  const payload = finalizeReportPayload({
     tool: 'fm-bench',
     version: options.version,
     startedAt,
@@ -131,7 +132,7 @@ export async function runBenchmark(options = {}) {
     scenarios,
     summary,
     results
-  };
+  });
   notify(options, {
     type: 'benchmark:complete',
     completed: completedRuns,

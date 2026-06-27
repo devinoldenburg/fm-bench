@@ -57,3 +57,7 @@ Client-side measurements include process startup, local queueing, model prefill,
 Stream smoothness metrics use stdout chunk arrival times. A chunk can contain more than one token, and terminal or pipe buffering can affect chunk boundaries. Treat `second_chunk_ms` and `chunk_gap` as user-visible streaming diagnostics, not raw decoder telemetry.
 
 For serious comparisons, prefer at least three runs per prompt, include warmups, benchmark both interactive and throughput or client profiles, compare models at the same concurrency operating points, set SLOs that match your real UX budget, and save JSON reports for later analysis.
+
+## Report artifacts
+
+Saved JSON includes client-side environment metadata (hardware model, macOS build, `fm` help digest, power/thermal snapshot) so shared results remain interpretable on other machines. Use `fm-bench validate` before publishing and `fm-bench compare --strict` when you require identical prompt suites. Format details: [report-format.md](./report-format.md).

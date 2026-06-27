@@ -29,6 +29,13 @@ export async function loadHistory(dir) {
     }
   }
 
+  reports.sort((a, b) => {
+    const ta = Date.parse(a.report.startedAt ?? '') || 0;
+    const tb = Date.parse(b.report.startedAt ?? '') || 0;
+    if (tb !== ta) return tb - ta;
+    return a.filePath.localeCompare(b.filePath);
+  });
+
   return reports;
 }
 
@@ -50,8 +57,8 @@ export function renderHistoryReport(reports, options = {}) {
   const MJ = ascii ? '+' : '┼';
   const BJ = ascii ? '+' : '┴';
 
-  const colWidths = [19, 8, 3, 6, 9, 9, 9, 9, 5];
-  const headers = ['STARTED AT', 'MODEL', 'C', 'RUNS', 'TTFT P50', 'E2E P50', 'E2E P95', 'USER T/S', 'SUCC'];
+  const colWidths = [19, 8, 10, 3, 6, 9, 9, 9, 9, 5];
+  const headers = ['STARTED AT', 'MODEL', 'TAG / NOTE', 'C', 'RUNS', 'TTFT P50', 'E2E P50', 'E2E P95', 'USER T/S', 'SUCC'];
 
   const renderRule = (l, j, r) => `${l}${colWidths.map((w) => H.repeat(w + 2)).join(j)}${r}`;
   const renderRowLine = (cells) => `${V}${cells.map((text, i) => ` ${fit(text, colWidths[i])} `).join(V)}${V}`;
@@ -63,15 +70,19 @@ export function renderHistoryReport(reports, options = {}) {
   lines.push(renderRowLine(headers.map((h, i) => h)));
   lines.push(renderRule(ML, MJ, MR));
 
-  for (const { filePath, report } of reports) {
+  for (const { report } of reports) {
     const started = report.startedAt ? report.startedAt.slice(0, 19).replace('T', ' ') : '?';
     const modelRows = report.summary ?? [];
+    const tags = Array.isArray(report.options?.tags) ? report.options.tags.join(',') : '';
+    const note = report.options?.note ? String(report.options.note) : '';
+    const label = tags || note || report.options?.profile || '—';
 
     for (const item of modelRows) {
       if (!item.available) continue;
       const row = [
         started,
         item.model ?? '-',
+        label,
         String(item.concurrency ?? 1),
         String(item.successes ?? '-'),
         item.ttft?.p50 != null ? formatMs(item.ttft.p50) : '-',

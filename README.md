@@ -30,16 +30,17 @@ fm-bench
 One command discovers your models, runs the standard prompt suite, and prints a full benchmark report:
 
 ```text
-fm-bench 0.5.0 | darwin/arm64 | fm
-prompts 5 | runs 3 | concurrency 1,2 | stream on | measured 30 | failed 0 | skipped 0 | elapsed 42.10s | SLO TTFT<=750ms,E2E<=4.00s
+fm-bench 0.6.0 | darwin/arm64 | fm
+prompts 3 | runs 5 | concurrency 1 | stream on | measured 15 | failed 0 | skipped 0 | elapsed 38.20s
 
 ┌───┬────────┬────────┬─────────┬──────┬──────┬──────────┬──────┬──────────┬─────┬─────┐
 │ C │ MODEL  │ STATUS │ OK/RUNS │ SUCC │ GOOD │ GOOD RPS │ TTFT │ E2E P95  │ SYS │ CV  │
 ├───┼────────┼────────┼─────────┼──────┼──────┼──────────┼──────┼──────────┼─────┼─────┤
 │ 1 │ system │ ok     │   15/15 │ 100% │  93% │      0.4 │ 318ms│    3.20s │  42 │ 12% │
-│ 2 │ system │ ok     │   15/15 │ 100% │  80% │      0.7 │ 501ms│    4.40s │  68 │ 21% │
 └───┴────────┴────────┴─────────┴──────┴──────┴──────────┴──────┴──────────┴─────┴─────┘
 ```
+
+Default profile is `standard` (3 prompts). Use `--runs 5`, `--sweep-concurrency 1,2`, or `--profile client` for heavier suites.
 
 Wide terminals add TTFT P95, TPOT, decode/prefill throughput, chunk-gap smoothness, and 95% CI columns. Narrow terminals switch to compact model cards automatically.
 
@@ -70,8 +71,10 @@ fm-bench doctor   # verify your setup
 |---------|-------------|
 | `fm-bench` | Run the full benchmark (default) |
 | `fm-bench models` | List discovered models, availability, and quota |
-| `fm-bench compare <a.json> <b.json>` | Regression diff: before/after metrics with color-coded deltas |
-| `fm-bench history [dir]` | Chronological trend table from a directory of saved reports |
+| `fm-bench compare <a.json> <b.json>` | Regression diff with suite/hardware warnings; `--strict` for CI |
+| `fm-bench history [dir]` | Trend table from saved reports (sorted by time, tags visible) |
+| `fm-bench validate <report.json>` | Verify report JSON (schema v1) before sharing |
+| `fm-bench export <report.json>` | Standalone HTML report with embedded JSON |
 | `fm-bench legend` | Definitions for every table column and color rule |
 | `fm-bench doctor` | Environment check: Node, macOS, `fm`, CPU, memory, thermals, battery |
 
@@ -95,9 +98,10 @@ fm-bench --profile reasoning --runs 5
 fm-bench --profile coding --runs 3 --histogram
 
 # Archive runs and compare before/after a macOS update
-fm-bench --output-dir reports/ --tag before-update
-fm-bench --output-dir reports/ --tag after-update
-fm-bench compare reports/fm-bench_*before*.json reports/fm-bench_*after*.json
+fm-bench --output-dir reports/ --tag before-update --export-html
+fm-bench --output-dir reports/ --tag after-update --export-html
+fm-bench validate reports/*.json
+fm-bench compare reports/fm-bench_*before*.json reports/fm-bench_*after*.json --strict
 
 # Fail CI when SLOs regress
 fm-bench --ci --slo-ttft-ms 750 --slo-e2e-ms 4000 --runs 5
@@ -142,8 +146,9 @@ fm-bench --format csv --out bench.csv
 | Flag | Description |
 |------|-------------|
 | `--json` / `--csv` | Output format (also `--format table\|json\|csv`) |
-| `-o, --out <file>` | Save a report to a file |
-| `--output-dir <dir>` | Auto-save a timestamped JSON report to a directory |
+| `-o, --out <file>` | Save JSON (`.json`), per-run CSV (`.csv`), or shareable HTML (`.html`) |
+| `--output-dir <dir>` | Auto-save timestamped JSON (and optional HTML with `--export-html`) |
+| `--export-html` | With `--output-dir`, also write a matching `.html` report |
 | `--tag <name>` | Label this run; repeatable; appears in payload and header |
 | `--note <text>` | Freeform annotation in payload and header |
 | `--histogram` | Print ASCII latency distribution chart after the report |
@@ -175,6 +180,14 @@ Nine built-in suites, choose the one that matches your use case:
 | `reasoning` | 5 | Multi-step logic, estimation, debugging — capability + speed |
 | `coding` | 5 | Code review, refactoring, algorithms, system design |
 | `creative` | 5 | Product copy, analogies, commit messages, docs |
+
+## Sharing and comparing results
+
+Reports from 0.6.0+ include **schema v1**: `reportId`, hardware fingerprint, and a **suite key** so you can tell if two JSON files used the same prompts and run settings. See [docs/report-format.md](docs/report-format.md).
+
+- Share **HTML** with teammates who do not use the CLI: `fm-bench export bench.json -o bench.html`
+- Gate uploads in CI: `fm-bench validate artifact.json`
+- Apples-to-apples regressions: same `--profile` and `--runs`, then `fm-bench compare a.json b.json`
 
 ## Regression Tracking
 
