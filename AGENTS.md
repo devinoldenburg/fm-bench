@@ -12,6 +12,13 @@
 
 The product benchmarks Apple's `fm` CLI, which only exists on macOS 27+ with Apple Intelligence. On the Linux cloud VM `fm` is absent, so `doctor`/`models`/the default benchmark fail with `spawn fm ENOENT`.
 
-The CLI reads the `fm` binary from the `FM_BIN` env var (or `--fm-bin <path>`). To exercise the full benchmark/report pipeline end-to-end here, point `FM_BIN` at a stub that emulates the subcommands `fm-bench` calls: `--help` (must print `Apple Foundation Models CLI` and/or a `MODELS` section), `available --model <m>`, `quota-usage --model <m>`, `token-count --quiet` (reads stdin, prints a token count), and `respond --model <m>` (reads the prompt on stdin, streams the answer to stdout). Example: `FM_BIN=/path/to/mock-fm node bin/fm-bench.js --models system --runs 2 --profile quick`.
+The CLI reads the `fm` binary from the `FM_BIN` env var (or `--fm-bin <path>`). Use the repo stub:
+
+```sh
+chmod +x scripts/mock-fm.sh
+FM_BIN="$(pwd)/scripts/mock-fm.sh" node bin/fm-bench.js --models system --runs 2 --profile quick
+```
+
+Architecture and module map: `docs/architecture.md`. Report schema: `docs/report-format.md`.
 
 These commands need **no** `fm` and work as-is: `legend`, `validate <report.json>`, `export <report.json>`, `compare <a.json> <b.json>`, `history <dir>`.

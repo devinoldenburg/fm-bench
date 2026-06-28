@@ -279,7 +279,7 @@ A live single-line progress indicator runs on stderr during interactive sessions
 
 `pcc` (Private Cloud Compute) availability depends on Apple's current eligibility. `fm-bench` shows it as skipped if `fm available --model pcc` reports unavailable.
 
-See [docs/methodology.md](docs/methodology.md) for benchmark methodology and metric references.
+See [docs/methodology.md](docs/methodology.md) for benchmark methodology and metric references. Module layout: [docs/architecture.md](docs/architecture.md).
 
 ## Development
 

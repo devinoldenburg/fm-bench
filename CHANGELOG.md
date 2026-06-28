@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **`scripts/mock-fm.sh`**: documented stub for running the benchmark pipeline without Apple's `fm` (Linux/CI dev).
+- **`docs/architecture.md`**: explicit module map for agents and contributors.
+- **AGENTS.md** / **CONTRIBUTING.md**: mock-fm quick start and architecture cross-links.
+- Integration test: mock-fm quick benchmark JSON smoke.
+
 ## 0.6.1
 
 - **Release** workflow: GitHub release bodies are generated from `CHANGELOG.md` (not empty auto-notes). Re-running Release on an existing tag updates release notes.

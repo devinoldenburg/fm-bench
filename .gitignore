@@ -5,3 +5,4 @@ coverage/
 reports/
 dist/
 tmp/
+.lore/data/
