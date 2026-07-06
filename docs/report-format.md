@@ -12,7 +12,7 @@ Every measured run can be saved as JSON. Reports from fm-bench **0.6.0+** includ
 | `reportId` | Random hex id for citing a single run |
 | `startedAt` / `finishedAt` | ISO-8601 timestamps |
 | `options` | Public run configuration (profile, runs, concurrency, SLOs, tags, note) |
-| `environment` | Host fingerprint: platform, arch, Node, hardware model, CPU, memory, macOS version, `fm` help digest, thermal/power snapshot |
+| `environment` | Host fingerprint: platform, arch, Node, hardware model, CPU, memory, macOS version/build, `fm` help digest, thermal/power snapshot |
 | `suite` | Derived suite key + fingerprint for apples-to-apples comparison |
 | `prompts` | Prompt ids, text, and token counts |
 | `models` | Discovered models and availability |
@@ -38,6 +38,7 @@ For fair comparison, match:
 - Same `--profile` (or same `--prompt-file`)
 - Same `--runs` and `--warmup`
 - Same concurrency operating points (`--concurrency` or `--sweep-concurrency`)
+- Same or intentionally changed macOS build (especially for beta-to-beta comparisons)
 - Similar power/thermal state (see `environment.power` and `environment.thermal`)
 
 ```sh
@@ -45,7 +46,7 @@ fm-bench compare before.json after.json
 fm-bench compare before.json after.json --strict   # exit 2 if suites differ
 ```
 
-`compare` warns when hardware, macOS, or suite configuration differ. Use `--tag` and `--note` so `fm-bench history` stays readable.
+`compare` warns when hardware, macOS product version, macOS build, or suite configuration differ. Use `--tag` and `--note` so `fm-bench history` stays readable.
 
 ## Legacy reports
 

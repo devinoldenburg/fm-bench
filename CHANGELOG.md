@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.2
+
+- **macOS 27 beta 3 compatibility**: verified on macOS 27.0 beta 3 build `26A5378j` with the installed `fm` CLI and Xcode 26.6 toolchain.
+- **Compare accuracy**: `fm-bench compare` now warns when two reports were captured on different macOS build versions, even when both report the same product version such as `27.0`.
+- **Compare metadata**: compare headers now show the macOS product version and build, making beta-to-beta Foundation Models benchmark changes easier to audit.
+
 ## 0.6.1
 
 - **Release** workflow: GitHub release bodies are generated from `CHANGELOG.md` (not empty auto-notes). Re-running Release on an existing tag updates release notes.

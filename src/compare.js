@@ -25,6 +25,12 @@ export function diffReports(before, after) {
 
 function reportMeta(report) {
   const tags = report.options?.tags;
+  const macOS = report.suite?.fingerprint?.macOSProductVersion
+    ?? report.environment?.macOS?.match(/ProductVersion:\s*([^\n]+)/)?.[1]?.trim()
+    ?? null;
+  const macOSBuild = report.suite?.fingerprint?.macOSBuildVersion
+    ?? report.environment?.macOS?.match(/BuildVersion:\s*([^\n]+)/)?.[1]?.trim()
+    ?? null;
   return {
     version: report.version ?? '?',
     schemaVersion: report.schemaVersion ?? null,
@@ -37,9 +43,8 @@ function reportMeta(report) {
     tags: Array.isArray(tags) ? tags : [],
     note: report.options?.note ?? null,
     hwModel: report.environment?.hwModel ?? report.suite?.fingerprint?.hwModel ?? null,
-    macOS: report.suite?.fingerprint?.macOSProductVersion
-      ?? report.environment?.macOS?.match(/ProductVersion:\s*([^\n]+)/)?.[1]?.trim()
-      ?? null
+    macOS,
+    macOSBuild
   };
 }
 
@@ -134,8 +139,8 @@ export function renderCompareReport(diff, options = {}) {
   const afterLabel = `${diff.after.version}  ${diff.after.startedAt ? diff.after.startedAt.slice(0, 19).replace('T', ' ') : '?'}`;
 
   lines.push(`fm-bench compare`);
-  lines.push(`  before: ${beforeLabel}${diff.before.hwModel ? ` | ${diff.before.hwModel}` : ''}`);
-  lines.push(`  after:  ${afterLabel}${diff.after.hwModel ? ` | ${diff.after.hwModel}` : ''}`);
+  lines.push(`  before: ${beforeLabel}${diff.before.hwModel ? ` | ${diff.before.hwModel}` : ''}${formatMacOSMeta(diff.before)}`);
+  lines.push(`  after:  ${afterLabel}${diff.after.hwModel ? ` | ${diff.after.hwModel}` : ''}${formatMacOSMeta(diff.after)}`);
   if (diff.before.profile || diff.after.profile) {
     lines.push(`  suite:  profile=${diff.before.profile ?? '?'} runs=${diff.before.runs ?? '?'} (before) → profile=${diff.after.profile ?? '?'} runs=${diff.after.runs ?? '?'}`);
   }
@@ -219,6 +224,13 @@ export function renderCompareReport(diff, options = {}) {
   lines.push('Rows: before → delta (% change) → after  |  Lower is better for latency and CV; higher for throughput and success.');
 
   return lines.join('\n');
+}
+
+function formatMacOSMeta(meta) {
+  if (!meta.macOS && !meta.macOSBuild) return '';
+  const label = meta.macOS ? `macOS ${meta.macOS}` : 'macOS';
+  const build = meta.macOSBuild ? ` (${meta.macOSBuild})` : '';
+  return ` | ${label}${build}`;
 }
 
 function fmtDiffMs(diff, which, color) {

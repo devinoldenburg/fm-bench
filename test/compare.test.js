@@ -28,3 +28,18 @@ test('renderCompareReport mentions suite warning when mismatched', () => {
   const text = renderCompareReport(diff, { color: false, ascii: true });
   assert.match(text, /warn:/);
 });
+
+test('renderCompareReport includes macOS build metadata', () => {
+  const beta3 = {
+    ...after,
+    environment: {
+      ...after.environment,
+      macOS: 'ProductVersion:\t27.0\nBuildVersion:\t26A5378j'
+    }
+  };
+  const diff = diffReports(before, beta3);
+  const text = renderCompareReport(diff, { color: false, ascii: true });
+  assert.match(text, /macOS 27\.0 \(25A123\)/);
+  assert.match(text, /macOS 27\.0 \(26A5378j\)/);
+  assert.match(text, /macOS build differs/);
+});

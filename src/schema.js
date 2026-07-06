@@ -96,6 +96,9 @@ export function compareCompatibility(before, after) {
   if (bFp.macOSProductVersion && aFp.macOSProductVersion && bFp.macOSProductVersion !== aFp.macOSProductVersion) {
     warnings.push(`macOS version differs (${bFp.macOSProductVersion} vs ${aFp.macOSProductVersion})`);
   }
+  if (bFp.macOSBuildVersion && aFp.macOSBuildVersion && bFp.macOSBuildVersion !== aFp.macOSBuildVersion) {
+    warnings.push(`macOS build differs (${bFp.macOSBuildVersion} vs ${aFp.macOSBuildVersion})`);
+  }
 
   return {
     compatible: errors.length === 0,

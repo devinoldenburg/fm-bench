@@ -57,3 +57,16 @@ test('compareCompatibility warns on suite mismatch', () => {
   assert.equal(compat.suiteMatch, false);
   assert.ok(compat.warnings.some((w) => w.includes('suites differ')));
 });
+
+test('compareCompatibility warns on macOS beta build changes', () => {
+  const after = {
+    ...minimal,
+    environment: {
+      ...minimal.environment,
+      macOS: 'ProductVersion:\t27.0\nBuildVersion:\t26A5378j'
+    }
+  };
+  const compat = compareCompatibility(minimal, after);
+  assert.equal(compat.compatible, true);
+  assert.ok(compat.warnings.some((w) => w.includes('macOS build differs')));
+});
