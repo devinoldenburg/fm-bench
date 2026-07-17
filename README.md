@@ -273,9 +273,11 @@ A live single-line progress indicator runs on stderr during interactive sessions
 
 ## Requirements
 
-- macOS 27 or newer (Apple's `fm` CLI is preinstalled).
+- macOS 27.0 or newer (Apple's `fm` CLI is preinstalled there).
 - Node.js 20 or newer.
 - Apple Intelligence enabled on the device.
+
+Benchmark commands refuse to start on older macOS versions and report the detected version plus the latest supported macOS — see [docs/supported-platforms.md](docs/supported-platforms.md).
 
 `pcc` (Private Cloud Compute) availability depends on Apple's current eligibility. `fm-bench` shows it as skipped if `fm available --model pcc` reports unavailable.
 

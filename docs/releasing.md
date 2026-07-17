@@ -17,7 +17,7 @@
 ## Option B — Local
 
 ```sh
-npm ci && npm test && npm run lint
+npm ci && npm test && npm run lint && npm run check:pack
 npm version patch   # or minor / major
 git push --follow-tags
 ```
@@ -37,6 +37,7 @@ gh release edit v0.6.0 --notes-file /tmp/notes.md --repo devinoldenburg/fm-bench
 
 ```sh
 npm run publish:dry-run
+npm run check:pack
 ```
 
 CI runs the same dry-run on every push to `main` and on pull requests.
