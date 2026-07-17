@@ -16,11 +16,12 @@
   "scripts": {
     "test": "node --test",
     "lint": "node --check bin/fm-bench.js && find src test -name '*.js' -print0 | xargs -0 -n1 node --check",
-    "prepack": "npm test && npm run lint",
+    "prepack": "npm test && npm run lint && npm run check:pack",
     "release:patch": "npm version patch && git push --follow-tags",
     "release:minor": "npm version minor && git push --follow-tags",
     "release:major": "npm version major && git push --follow-tags",
-    "publish:dry-run": "npm publish --dry-run --access public"
+    "publish:dry-run": "npm publish --dry-run --access public",
+    "check:pack": "node scripts/check-package.mjs"
   },
   "keywords": [
     "apple",
@@ -46,5 +47,8 @@
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
-  }
+  },
+  "os": [
+    "darwin"
+  ]
 }
