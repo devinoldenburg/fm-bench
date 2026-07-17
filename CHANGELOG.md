@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.3
+
+- **macOS version gate**: `run` and `models` refuse to start on macOS older than 27.0 (or on non-macOS hosts), exiting with code 2 and naming both the detected version and the latest supported macOS (`27.0+`).
+- **Doctor diagnostics**: `fm-bench doctor` still runs on unsupported hosts so it can report the macOS mismatch, the latest supported version, and a failed `fm` probe instead of hard-exiting first.
+- **Supported platforms doc**: new [docs/supported-platforms.md](docs/supported-platforms.md) describing the fixed macOS requirement and which commands are gated.
+- **Package metadata**: `package.json` now declares `"os": ["darwin"]` so npm marks the package as macOS-only.
+- **Pack integrity**: `npm run check:pack` (wired into `prepack`) walks runtime imports and fails if any required file is missing from the published tarball.
+- **Verified** on macOS 27.0 build `26A5378n` (Apple M5 Pro) with the installed `fm` CLI: doctor, quick/standard benchmarks, validate/export/history, and CI-style SLO runs all passed.
+
 ## 0.6.2
 
 - **macOS 27 beta 3 compatibility**: verified on macOS 27.0 beta 3 build `26A5378j` with the installed `fm` CLI and Xcode 26.6 toolchain.
