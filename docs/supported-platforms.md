@@ -12,7 +12,7 @@
 
 ## Version enforcement
 
-Every command that launches `fm` — the default `run` benchmark, `models`, and `doctor` — checks the macOS version first and refuses to start on anything older than macOS 27:
+Commands that launch `fm` benchmarks — the default `run` command and `models` — check the macOS version first and refuse to start on anything older than macOS 27:
 
 ```text
 fm-bench: unsupported macOS: detected macOS 26.1, but fm-bench requires macOS 27 or newer (Apple's fm CLI is preinstalled there).
@@ -23,4 +23,4 @@ The process exits with code `2`. This is deliberate: running on an unsupported m
 
 Commands that only read local report files — `compare`, `history`, `validate`, `export`, and `legend` — are not gated and work anywhere Node.js runs.
 
-`fm-bench doctor` prints the detected macOS version and, on unsupported systems, an explicit `macOS support` line plus the latest supported version.
+`fm-bench doctor` still runs on unsupported hosts so you can diagnose the environment: it prints the detected macOS version, an explicit `macOS support` line, and the latest supported version.
