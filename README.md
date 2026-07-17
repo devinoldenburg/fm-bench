@@ -30,7 +30,7 @@ fm-bench
 One command discovers your models, runs the standard prompt suite, and prints a full benchmark report:
 
 ```text
-fm-bench 0.6.2 | darwin/arm64 | fm
+fm-bench 0.6.3 | darwin/arm64 | fm
 prompts 3 | runs 5 | concurrency 1 | stream on | measured 15 | failed 0 | skipped 0 | elapsed 38.20s
 
 ┌───┬────────┬────────┬─────────┬──────┬──────┬──────────┬──────┬──────────┬─────┬─────┐
