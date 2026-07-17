@@ -5,6 +5,7 @@ import { diffReports, renderCompareReport } from './compare.js';
 import { renderHtmlReport } from './export.js';
 import { validateReport } from './schema.js';
 import { loadHistory, renderHistoryReport } from './history.js';
+import { detectMacosVersion, evaluateMacosSupport, formatMacosRequirementError, MIN_SUPPORTED_MACOS, parseMacosVersion } from './macos.js';
 import { runProcess } from './process.js';
 import { createProgress } from './progress.js';
 import { flattenResults, toCsv, writeReport } from './report.js';
@@ -14,7 +15,7 @@ import { legendEntries, renderBenchmarkReport, renderLatencyHistogram, renderLeg
 const require = createRequire(import.meta.url);
 const packageJson = require('../package.json');
 
-export async function runCli(argv = process.argv.slice(2)) {
+export async function runCli(argv = process.argv.slice(2), env = {}) {
   const parsed = parseArgs(argv);
 
   if (parsed.help) {
@@ -26,6 +27,8 @@ export async function runCli(argv = process.argv.slice(2)) {
     console.log(packageJson.version);
     return;
   }
+
+  await assertSupportedMacos(parsed, env);
 
   if (parsed.command === 'legend') {
     if (parsed.format === 'json') {
@@ -151,6 +154,24 @@ export async function runCli(argv = process.argv.slice(2)) {
     }
     console.error(`fm-bench ci: PASS`);
   }
+}
+
+// Offline commands only read local report files; they do not launch `fm`, so
+// they stay usable on any platform. Benchmarks and `fm` probes are gated.
+const OFFLINE_COMMANDS = new Set(['compare', 'history', 'validate', 'export', 'legend']);
+
+async function assertSupportedMacos(parsed, env = {}) {
+  if (OFFLINE_COMMANDS.has(parsed.command)) return;
+
+  const evaluation = evaluateMacosSupport(
+    env.platform ?? process.platform,
+    parseMacosVersion(await detectMacosVersion(env))
+  );
+  if (evaluation.supported) return;
+
+  const error = new Error(formatMacosRequirementError(evaluation));
+  error.exitCode = 2;
+  throw error;
 }
 
 function evaluateCi(payload) {
@@ -554,11 +575,14 @@ async function runDoctor(options) {
   checks.push(['node', process.version, true]);
   checks.push(['platform', `${process.platform}/${process.arch}`, process.platform === 'darwin']);
 
-  const swVers = await runProcess('sw_vers', [], { timeoutMs: 5_000 });
-  const macOS = swVers.stdout || swVers.stderr;
-  const versionMatch = macOS.match(/ProductVersion:\s*([0-9.]+)/);
-  const major = versionMatch ? Number.parseInt(versionMatch[1].split('.')[0], 10) : null;
-  checks.push(['macOS', versionMatch?.[1] || 'unknown', major == null || major >= 27]);
+  const macOS = await detectMacosVersion();
+  const parsedVersion = parseMacosVersion(macOS);
+  const support = evaluateMacosSupport(process.platform, parsedVersion);
+  checks.push(['macOS', parsedVersion?.version || 'unknown', support.supported]);
+  if (!support.supported) {
+    checks.push(['macOS support', support.reason, false]);
+    checks.push(['latest supported', support.latestSupported, false]);
+  }
 
   const hwModel = await runProcess('sysctl', ['-n', 'hw.model'], { timeoutMs: 3_000 });
   const hwModelStr = (hwModel.stdout || '').trim();
@@ -669,7 +693,7 @@ function resolveProgress(parsed) {
 function helpText() {
   return `fm-bench ${packageJson.version}
 
-Dynamic benchmark CLI for Apple's fm command on macOS 27+.
+Dynamic benchmark CLI for Apple's fm command on macOS ${MIN_SUPPORTED_MACOS}+.
 
 Usage:
   fm-bench [run] [options]

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseArgs } from '../src/cli.js';
+import { parseArgs, runCli } from '../src/cli.js';
 
 test('parseArgs supports repeated models and prompts', () => {
   const args = parseArgs(['--models', 'system,pcc', '--model', 'future', '--prompt', 'one', '--prompt', 'two']);
@@ -57,4 +57,50 @@ test('parseArgs supports validate export compare strict and export-html', () => 
   const run = parseArgs(['--export-html', '--strict']);
   assert.equal(run.exportHtml, true);
   assert.equal(run.strictCompare, true);
+});
+
+const SW_VERS_26 = 'ProductName:\tmacOS\nProductVersion:\t26.1\nBuildVersion:\t25B78\n';
+const swVers26 = async () => SW_VERS_26;
+
+test('runCli blocks benchmarks on macOS older than 27 and names the latest supported version', async () => {
+  await assert.rejects(
+    () => runCli(['--profile', 'quick'], { platform: 'darwin', swVers: swVers26 }),
+    (error) => {
+      assert.match(error.message, /unsupported macOS/);
+      assert.match(error.message, /detected macOS 26\.1/);
+      assert.match(error.message, /Latest supported: macOS 27\.0 or newer/);
+      assert.equal(error.exitCode, 2);
+      return true;
+    }
+  );
+});
+
+test('runCli blocks models and doctor on unsupported macOS', async () => {
+  await assert.rejects(
+    () => runCli(['models'], { platform: 'darwin', swVers: swVers26 }),
+    (error) => {
+      assert.equal(error.exitCode, 2);
+      assert.match(error.message, /Latest supported/);
+      return true;
+    }
+  );
+  await assert.rejects(
+    () => runCli(['doctor'], { platform: 'darwin', swVers: swVers26 }),
+    (error) => error.exitCode === 2
+  );
+});
+
+test('runCli blocks benchmarks on non-macOS platforms', async () => {
+  await assert.rejects(
+    () => runCli(['--profile', 'quick'], { platform: 'linux', swVers: swVers26 }),
+    (error) => {
+      assert.match(error.message, /only runs on macOS/);
+      assert.equal(error.exitCode, 2);
+      return true;
+    }
+  );
+});
+
+test('runCli keeps offline commands usable on unsupported macOS', async () => {
+  await assert.doesNotReject(() => runCli(['legend', '--json'], { platform: 'darwin', swVers: swVers26 }));
 });
