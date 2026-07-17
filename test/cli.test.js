@@ -75,7 +75,7 @@ test('runCli blocks benchmarks on macOS older than 27 and names the latest suppo
   );
 });
 
-test('runCli blocks models and doctor on unsupported macOS', async () => {
+test('runCli blocks models on unsupported macOS', async () => {
   await assert.rejects(
     () => runCli(['models'], { platform: 'darwin', swVers: swVers26 }),
     (error) => {
@@ -83,10 +83,6 @@ test('runCli blocks models and doctor on unsupported macOS', async () => {
       assert.match(error.message, /Latest supported/);
       return true;
     }
-  );
-  await assert.rejects(
-    () => runCli(['doctor'], { platform: 'darwin', swVers: swVers26 }),
-    (error) => error.exitCode === 2
   );
 });
 

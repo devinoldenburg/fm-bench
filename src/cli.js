@@ -156,12 +156,13 @@ export async function runCli(argv = process.argv.slice(2), env = {}) {
   }
 }
 
-// Offline commands only read local report files; they do not launch `fm`, so
-// they stay usable on any platform. Benchmarks and `fm` probes are gated.
-const OFFLINE_COMMANDS = new Set(['compare', 'history', 'validate', 'export', 'legend']);
+// Offline report tools stay usable anywhere. `doctor` is also allowed through so
+// it can print the detected version and the latest supported macOS when the host
+// is too old. Only commands that launch `fm` benchmarks are hard-gated.
+const SKIP_MACOS_GATE = new Set(['compare', 'history', 'validate', 'export', 'legend', 'doctor']);
 
 async function assertSupportedMacos(parsed, env = {}) {
-  if (OFFLINE_COMMANDS.has(parsed.command)) return;
+  if (SKIP_MACOS_GATE.has(parsed.command)) return;
 
   const evaluation = evaluateMacosSupport(
     env.platform ?? process.platform,
@@ -619,17 +620,23 @@ async function runDoctor(options) {
     checks.push(['battery', `${pct} (${source})`, ok]);
   }
 
-  const inspection = await inspectModels(options);
-  checks.push(['fm', inspection.fmBin, inspection.models.length > 0]);
-  for (const model of inspection.models) {
-    checks.push([`model:${model.name}`, model.available ? 'available' : model.reason || 'unavailable', model.available]);
+  let models = [];
+  try {
+    const inspection = await inspectModels(options);
+    models = inspection.models;
+    checks.push(['fm', inspection.fmBin, inspection.models.length > 0]);
+    for (const model of inspection.models) {
+      checks.push([`model:${model.name}`, model.available ? 'available' : model.reason || 'unavailable', model.available]);
+    }
+  } catch (error) {
+    checks.push(['fm', error.message || String(error), false]);
   }
 
   const lines = checks.map(([name, detail, ok]) => `${ok ? 'ok  ' : 'warn'} ${name.padEnd(16)} ${String(detail).replace(/\s+/g, ' ').trim()}`);
   console.log(lines.join('\n'));
 
   if (options.out) {
-    await fs.writeFile(options.out, `${JSON.stringify({ checks, models: inspection.models }, null, 2)}\n`, 'utf8');
+    await fs.writeFile(options.out, `${JSON.stringify({ checks, models }, null, 2)}\n`, 'utf8');
   }
 }
 
