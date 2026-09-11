@@ -1,13 +1,13 @@
 import crypto from 'node:crypto';
 import { detectFmCapabilities } from './capabilities.js';
-import { checkModelAvailability, collectEnvironment, countTokens, getQuotaUsage, respond } from './fm.js';
+import { checkModelAvailability, collectEnvironment, countTokens, fmBinaryFromOptions, getQuotaUsage, respond } from './fm.js';
 import { metricAvailability } from './metrics.js';
 import { loadPrompts } from './prompts.js';
 import { finalizeReportPayload } from './schema.js';
 import { summarizeByModel } from './stats.js';
 
 export async function inspectModels(options = {}) {
-  const fmBin = options.fmBin || process.env.FM_BIN || 'fm';
+  const fmBin = fmBinaryFromOptions(options);
   const capabilities = options.capabilities ?? await detectFmCapabilities(fmBin, options);
   const discovered = {
     fmBin,
@@ -52,7 +52,7 @@ export async function inspectModels(options = {}) {
 
 export async function runBenchmark(options = {}) {
   const startedAt = new Date().toISOString();
-  const fmBin = options.fmBin || process.env.FM_BIN || 'fm';
+  const fmBin = fmBinaryFromOptions(options);
 
   notify(options, { type: 'phase', phase: 'capabilities', message: 'probing fm capabilities' });
   const capabilities = options.capabilities ?? await detectFmCapabilities(fmBin, options);

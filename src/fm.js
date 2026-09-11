@@ -26,22 +26,6 @@ export async function getFmHelp(fmBin, timeoutMs = 10_000) {
 }
 
 /**
- * Discover models, preferring an already-detected capability probe so a run
- * does not spawn `fm --help` more than once.
- * @param {Record<string, any>} options
- */
-export async function discoverModels(options = {}) {
-  const fmBin = fmBinaryFromOptions(options);
-  const capabilities = options.capabilities ?? await detectFmCapabilities(fmBin, options);
-  return {
-    fmBin,
-    models: capabilities.models,
-    help: capabilities.help,
-    capabilities
-  };
-}
-
-/**
  * Check one model against the detected `fm` build.
  *
  * Models the build does not expose are reported as unsupported without

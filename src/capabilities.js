@@ -9,7 +9,7 @@
 
 import crypto from 'node:crypto';
 import { stripAnsi } from './ansi.js';
-import { parseModelsFromHelp } from './fm-help.js';
+import { parseAvailabilityList, parseModelsFromHelp } from './fm-help.js';
 import { runProcess } from './process.js';
 
 const SECTION_HEADER = /^\s*[A-Z][A-Z0-9 /-]+\s*$/;
@@ -179,16 +179,8 @@ async function discoverModelsFromAvailability(fmBin, options = {}) {
     env: options.env ?? process.env
   });
   if (result.error) return [];
-  const text = stripAnsi(`${result.stdout}${result.stderr}`);
-  const models = new Map();
-  for (const line of text.split(/\r?\n/)) {
-    const match = line.match(/^\s*([A-Za-z0-9._-]+)(?:\s+model)?\s+(?:is\s+)?(available|unavailable|not available)\b/i);
-    if (!match) continue;
-    const name = match[1].toLowerCase();
-    if (['the', 'no', 'model', 'system'].includes(name) && name !== 'system') continue;
-    models.set(name, { name, description: '' });
-  }
-  return [...models.values()];
+  return parseAvailabilityList(`${result.stdout}${result.stderr}`)
+    .map((model) => ({ name: model.name, description: '' }));
 }
 
 function escapeRegExp(value) {

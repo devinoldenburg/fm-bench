@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { formatCapabilitySummary, metricAvailability, metricDefinition, metricDefinitions } from '../src/metrics.js';
+import { formatCapabilitySummary, metricAvailability } from '../src/metrics.js';
 
 const fullFeatures = {
   tokenCounting: true,
@@ -62,15 +62,20 @@ test('metricAvailability reports quota from capability detection only', () => {
   assert.match(noQuota.quota.unavailableReason, /quota command/);
 });
 
-test('every metric definition carries a source and a kind', () => {
+test('every reported metric carries a source, a kind, and an availability reason when unavailable', () => {
   const kinds = new Set(['measured', 'proxy', 'derived', 'controlled']);
-  for (const definition of metricDefinitions()) {
-    assert.ok(kinds.has(definition.kind), `${definition.key} has kind ${definition.kind}`);
-    assert.ok(definition.source.length > 0, `${definition.key} needs a source`);
-    assert.ok(definition.requires.every((name) => ['streaming', 'tokenCounting', 'quota', 'slo'].includes(name)));
+  const metrics = metricAvailability({ features: { ...fullFeatures, quota: false } }, { stream: false });
+  const entries = Object.entries(metrics);
+  assert.ok(entries.length >= 15, 'expected the full metric catalogue');
+  for (const [key, metric] of entries) {
+    assert.ok(kinds.has(metric.kind), `${key} has kind ${metric.kind}`);
+    assert.ok(metric.source.length > 0, `${key} needs a source`);
+    assert.ok(metric.label.length > 0, `${key} needs a label`);
+    if (!metric.available) {
+      assert.ok(metric.unavailableReason.length > 0, `${key} must explain why it is unavailable`);
+    }
   }
-  assert.equal(metricDefinition('tpot').kind, 'derived');
-  assert.equal(metricDefinition('nope'), null);
+  assert.equal(metrics.tpot.kind, 'derived');
 });
 
 test('formatCapabilitySummary is human readable', () => {

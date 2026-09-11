@@ -192,15 +192,6 @@ export function metricAvailability(capabilities = {}, options = {}) {
   return metrics;
 }
 
-export function metricDefinition(key) {
-  const definition = DEFINITIONS.find((item) => item.key === key);
-  return definition ? { ...definition, requires: [...definition.requires] } : null;
-}
-
-export function metricDefinitions() {
-  return DEFINITIONS.map((definition) => ({ ...definition, requires: [...definition.requires] }));
-}
-
 /** Short human line for CLI output, e.g. "token counting: yes, quota: no". */
 export function formatCapabilitySummary(capabilities = {}) {
   const features = capabilities.features ?? {};
