@@ -3,6 +3,7 @@ import { createRequire } from 'node:module';
 import { inspectModels, runBenchmark } from './bench.js';
 import { diffReports, renderCompareReport } from './compare.js';
 import { renderHtmlReport } from './export.js';
+import { formatCapabilitySummary } from './metrics.js';
 import { validateReport } from './schema.js';
 import { loadHistory, renderHistoryReport } from './history.js';
 import { detectMacosVersion, evaluateMacosSupport, formatMacosRequirementError, MIN_SUPPORTED_MACOS, parseMacosVersion } from './macos.js';
@@ -10,10 +11,24 @@ import { runProcess } from './process.js';
 import { createProgress } from './progress.js';
 import { flattenResults, toCsv, writeReport } from './report.js';
 import { parseBatteryOutput, parseThermalOutput } from './system.js';
-import { legendEntries, renderBenchmarkReport, renderLatencyHistogram, renderLegend, renderModelsTable } from './table.js';
+import { legendEntries, renderBenchmarkReport, renderLatencyHistogram, renderLegend, renderModelsReport } from './table.js';
 
 const require = createRequire(import.meta.url);
 const packageJson = require('../package.json');
+
+/** Usage / environment error: bad flags, missing arguments, unsupported host. */
+function usageError(message) {
+  const error = new Error(message);
+  error.exitCode = 2;
+  return error;
+}
+
+/** Operational failure: invalid report data, failed benchmark gate. */
+function operationalError(message) {
+  const error = new Error(message);
+  error.exitCode = 1;
+  return error;
+}
 
 export async function runCli(argv = process.argv.slice(2), env = {}) {
   const parsed = parseArgs(argv);
@@ -69,9 +84,14 @@ export async function runCli(argv = process.argv.slice(2), env = {}) {
   if (parsed.command === 'models') {
     const inspection = await inspectModels(parsed);
     if (parsed.format === 'json') {
+      // Shape stays a plain array so existing automation keeps working;
+      // full capability detail lives in `doctor --json` and in report payloads.
       console.log(JSON.stringify(inspection.models, null, 2));
     } else {
-      console.log(renderModelsTable(inspection.models, renderOptions(parsed)));
+      console.log(renderModelsReport(inspection.models, {
+        ...renderOptions(parsed),
+        capabilities: inspection.capabilities
+      }));
     }
     return;
   }
@@ -148,9 +168,7 @@ export async function runCli(argv = process.argv.slice(2), env = {}) {
     if (!ciResult.passed) {
       const reasons = ciResult.reasons.join('; ');
       console.error(`fm-bench ci: FAIL — ${reasons}`);
-      const error = new Error(`CI checks failed: ${reasons}`);
-      error.exitCode = 1;
-      throw error;
+      throw operationalError(`CI checks failed: ${reasons}`);
     }
     console.error(`fm-bench ci: PASS`);
   }
@@ -170,8 +188,7 @@ async function assertSupportedMacos(parsed, env = {}) {
   );
   if (evaluation.supported) return;
 
-  const error = new Error(formatMacosRequirementError(evaluation));
-  error.exitCode = 2;
+  const error = usageError(formatMacosRequirementError(evaluation));
   throw error;
 }
 
@@ -315,7 +332,7 @@ export function parseArgs(argv) {
       case '--profile':
         options.profile = requireValue(arg, args);
         if (!['quick', 'standard', 'interactive', 'throughput', 'client', 'stress', 'reasoning', 'coding', 'creative'].includes(options.profile)) {
-          throw new Error(`--profile must be one of: quick, standard, interactive, throughput, client, stress, reasoning, coding, creative`);
+          throw usageError('--profile must be one of: quick, standard, interactive, throughput, client, stress, reasoning, coding, creative');
         }
         break;
       case '-i':
@@ -352,7 +369,7 @@ export function parseArgs(argv) {
       case '--format':
         options.format = requireValue(arg, args);
         if (!['table', 'json', 'csv'].includes(options.format)) {
-          throw new Error('--format must be one of: table, json, csv');
+          throw usageError('--format must be one of: table, json, csv');
         }
         break;
       case '--ascii':
@@ -425,7 +442,7 @@ export function parseArgs(argv) {
         break;
       default:
         if (arg.startsWith('-')) {
-          throw new Error(`Unknown option: ${arg}`);
+          throw usageError(`Unknown option: ${arg}`);
         }
         if (options.command === 'compare') {
           options.compareFiles.push(arg);
@@ -464,29 +481,26 @@ async function runHistory(options, renderOpts) {
 async function runCompare(options, renderOpts) {
   const files = options.compareFiles;
   if (files.length < 2) {
-    throw new Error('compare requires two JSON report files: fm-bench compare before.json after.json');
+    throw usageError('compare requires two JSON report files: fm-bench compare before.json after.json');
   }
   if (files.length > 2) {
-    throw new Error('compare accepts exactly two JSON report files');
+    throw usageError('compare accepts exactly two JSON report files');
   }
 
   const [beforePath, afterPath] = files;
-  const [beforeText, afterText] = await Promise.all([
-    fs.readFile(beforePath, 'utf8'),
-    fs.readFile(afterPath, 'utf8')
-  ]);
+  let beforeText;
+  let afterText;
+  try {
+    [beforeText, afterText] = await Promise.all([
+      fs.readFile(beforePath, 'utf8'),
+      fs.readFile(afterPath, 'utf8')
+    ]);
+  } catch (error) {
+    throw operationalError(`Cannot read report: ${error.message}`);
+  }
 
-  let before, after;
-  try {
-    before = JSON.parse(beforeText);
-  } catch {
-    throw new Error(`Cannot parse ${beforePath} as JSON`);
-  }
-  try {
-    after = JSON.parse(afterText);
-  } catch {
-    throw new Error(`Cannot parse ${afterPath} as JSON`);
-  }
+  const before = parseReportJson(beforeText, beforePath);
+  const after = parseReportJson(afterText, afterPath);
 
   const diff = diffReports(before, after);
 
@@ -502,64 +516,77 @@ async function runCompare(options, renderOpts) {
   }
 
   if (options.strictCompare && diff.compatibility && !diff.compatibility.suiteMatch) {
-    const error = new Error('compare: benchmark suites differ (--strict)');
-    error.exitCode = 2;
-    throw error;
+    throw usageError('compare: benchmark suites differ (--strict)');
+  }
+}
+
+function parseReportJson(text, filePath) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw operationalError(`Cannot parse ${filePath} as JSON`);
   }
 }
 
 async function runValidate(options) {
   const files = options.validateFiles;
   if (files.length === 0) {
-    throw new Error('validate requires at least one JSON report: fm-bench validate report.json');
+    throw usageError('validate requires at least one JSON report: fm-bench validate report.json');
   }
 
-  let failed = 0;
+  const results = [];
   for (const filePath of files) {
     let parsed;
     try {
-      const text = await fs.readFile(filePath, 'utf8');
-      parsed = JSON.parse(text);
-    } catch {
-      console.error(`invalid  ${filePath}  (cannot read or parse JSON)`);
-      failed += 1;
+      parsed = JSON.parse(await fs.readFile(filePath, 'utf8'));
+    } catch (error) {
+      results.push({ file: filePath, ok: false, errors: [error.code === 'ENOENT'
+        ? 'file not found'
+        : 'cannot read or parse JSON'] });
       continue;
     }
     const result = validateReport(parsed);
-    if (result.ok) {
-      const id = result.report.reportId ?? '—';
-      const schema = result.report.schemaVersion ?? 'legacy';
-      console.log(`ok       ${filePath}  schema=${schema} id=${id}`);
-    } else {
-      console.error(`invalid  ${filePath}  ${result.errors.join('; ')}`);
-      failed += 1;
+    results.push(result.ok
+      ? { file: filePath, ok: true, schema: result.report.schemaVersion ?? 'legacy', id: result.report.reportId ?? null }
+      : { file: filePath, ok: false, errors: result.errors });
+  }
+
+  if (options.format === 'json') {
+    console.log(JSON.stringify({ ok: results.every((item) => item.ok), files: results }, null, 2));
+  } else {
+    for (const item of results) {
+      if (item.ok) {
+        console.log(`ok       ${item.file}  schema=${item.schema} id=${item.id ?? '—'}`);
+      } else {
+        console.error(`invalid  ${item.file}  ${item.errors.join('; ')}`);
+      }
     }
   }
 
+  const failed = results.filter((item) => !item.ok).length;
   if (failed > 0) {
-    const error = new Error(`${failed} report(s) failed validation`);
-    error.exitCode = 1;
-    throw error;
+    throw operationalError(`${failed} report(s) failed validation`);
   }
 }
 
 async function runExport(options) {
   const files = options.validateFiles;
   if (files.length === 0) {
-    throw new Error('export requires a JSON report: fm-bench export report.json [-o out.html]');
+    throw usageError('export requires a JSON report: fm-bench export report.json [-o out.html]');
   }
 
   const filePath = files[0];
-  const text = await fs.readFile(filePath, 'utf8');
   let report;
   try {
-    report = JSON.parse(text);
-  } catch {
-    throw new Error(`Cannot parse ${filePath} as JSON`);
+    report = JSON.parse(await fs.readFile(filePath, 'utf8'));
+  } catch (error) {
+    throw error.code === 'ENOENT'
+      ? operationalError(`Cannot read ${filePath}: file not found`)
+      : operationalError(`Cannot parse ${filePath} as JSON`);
   }
   const validation = validateReport(report);
   if (!validation.ok) {
-    throw new Error(`Not a valid fm-bench report: ${validation.errors.join('; ')}`);
+    throw operationalError(`Not a valid fm-bench report: ${validation.errors.join('; ')}`);
   }
 
   const html = renderHtmlReport(validation.report);
@@ -572,6 +599,7 @@ async function runExport(options) {
 }
 
 async function runDoctor(options) {
+  const json = options.format === 'json';
   const checks = [];
   checks.push(['node', process.version, true]);
   checks.push(['platform', `${process.platform}/${process.arch}`, process.platform === 'darwin']);
@@ -621,10 +649,17 @@ async function runDoctor(options) {
   }
 
   let models = [];
+  let capabilities = null;
   try {
     const inspection = await inspectModels(options);
     models = inspection.models;
-    checks.push(['fm', inspection.fmBin, inspection.models.length > 0]);
+    capabilities = inspection.capabilities;
+    checks.push(['fm', inspection.fmBin, capabilities.ok]);
+    if (capabilities.digest) checks.push(['fm help digest', capabilities.digest, true]);
+    checks.push(['fm commands', capabilities.commands.join(', ') || 'none found', capabilities.commands.length > 0]);
+    checks.push(['fm token counting', capabilities.features.tokenCounting ? `yes (${capabilities.features.tokenCountCommand})` : 'no', capabilities.features.tokenCounting]);
+    checks.push(['fm streaming', capabilities.features.streaming ? 'yes' : 'no', capabilities.features.streaming]);
+    checks.push(['fm quota', capabilities.features.quota ? 'yes' : 'no (not exposed by this build)', true]);
     for (const model of inspection.models) {
       checks.push([`model:${model.name}`, model.available ? 'available' : model.reason || 'unavailable', model.available]);
     }
@@ -632,35 +667,64 @@ async function runDoctor(options) {
     checks.push(['fm', error.message || String(error), false]);
   }
 
-  const lines = checks.map(([name, detail, ok]) => `${ok ? 'ok  ' : 'warn'} ${name.padEnd(16)} ${String(detail).replace(/\s+/g, ' ').trim()}`);
-  console.log(lines.join('\n'));
+  const payload = {
+    checks: checks.map(([name, detail, ok]) => ({ name, detail: String(detail), ok })),
+    models,
+    capabilities: capabilities ? describeCapabilities(capabilities) : null
+  };
+
+  if (json) {
+    console.log(JSON.stringify(payload, null, 2));
+  } else {
+    const lines = checks.map(([name, detail, ok]) => `${ok ? 'ok  ' : 'warn'} ${name.padEnd(16)} ${String(detail).replace(/\s+/g, ' ').trim()}`);
+    console.log(lines.join('\n'));
+    if (capabilities) {
+      console.log('');
+      console.log(`fm capabilities: ${formatCapabilitySummary(capabilities)}`);
+      for (const warning of capabilities.warnings) {
+        console.log(`limit: ${warning}`);
+      }
+    }
+  }
 
   if (options.out) {
-    await fs.writeFile(options.out, `${JSON.stringify({ checks, models }, null, 2)}\n`, 'utf8');
+    await fs.writeFile(options.out, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
   }
+}
+
+function describeCapabilities(capabilities) {
+  return {
+    bin: capabilities.bin,
+    ok: capabilities.ok,
+    digest: capabilities.digest,
+    commands: capabilities.commands,
+    models: capabilities.models,
+    features: capabilities.features,
+    warnings: capabilities.warnings
+  };
 }
 
 function requireValue(option, args) {
   const value = args.shift();
-  if (value == null || value === '') throw new Error(`${option} requires a value`);
+  if (value == null || value === '') throw usageError(`${option} requires a value`);
   return value;
 }
 
 function parsePositiveInt(value, option) {
   const parsed = Number.parseInt(value, 10);
-  if (!Number.isInteger(parsed) || parsed < 1) throw new Error(`${option} must be a positive integer`);
+  if (!Number.isInteger(parsed) || parsed < 1) throw usageError(`${option} must be a positive integer`);
   return parsed;
 }
 
 function parsePositiveNumber(value, option) {
   const parsed = Number.parseFloat(value);
-  if (!Number.isFinite(parsed) || parsed <= 0) throw new Error(`${option} must be a positive number`);
+  if (!Number.isFinite(parsed) || parsed <= 0) throw usageError(`${option} must be a positive number`);
   return parsed;
 }
 
 function parseNonNegativeInt(value, option) {
   const parsed = Number.parseInt(value, 10);
-  if (!Number.isInteger(parsed) || parsed < 0) throw new Error(`${option} must be a non-negative integer`);
+  if (!Number.isInteger(parsed) || parsed < 0) throw usageError(`${option} must be a non-negative integer`);
   return parsed;
 }
 
@@ -670,7 +734,7 @@ function parsePositiveIntList(value, option) {
     .map((item) => item.trim())
     .filter(Boolean)
     .map((item) => parsePositiveInt(item, option));
-  if (parsed.length === 0) throw new Error(`${option} requires at least one positive integer`);
+  if (parsed.length === 0) throw usageError(`${option} requires at least one positive integer`);
   return parsed;
 }
 
@@ -707,20 +771,21 @@ Usage:
   fm-bench models [options]
   fm-bench compare <before.json> <after.json> [options]
   fm-bench history [dir] [options]
-  fm-bench validate <report.json> [more...]
+  fm-bench validate <report.json> [more...] [options]
   fm-bench export <report.json> [-o report.html]
   fm-bench legend [options]
   fm-bench doctor [options]
 
 Commands:
   run                  Benchmark discovered or selected fm models
-  models               List discovered models and availability
+  models               List discovered models, availability, and fm capabilities
   compare              Compare two saved JSON reports and show metric deltas
   history              Show a trend table from all fm-bench JSON reports in a directory
   validate             Verify report JSON structure (schema v1)
   export               Render a shareable standalone HTML report from JSON
-  legend               Explain every terminal table column and color rule
-  doctor               Check Node, macOS, fm, and model availability
+  legend               Explain every terminal table column, color rule, and metric source
+  doctor               Check Node, macOS, fm capabilities, and model availability
+  metrics              Alias for legend
 
 Run options:
   -m, --models <list>       Models to benchmark, comma-separated or repeated
@@ -775,15 +840,32 @@ Compare:
 
 Environment:
       --fm-bin <path>       fm binary to execute (default: FM_BIN or fm)
+      --                    Treat the rest of the line as the prompt
   -h, --help                Show this help
       --version             Print version
 
+Machine-readable output:
+  --json and --csv write only data to stdout; progress and diagnostics go to stderr.
+  "validate --json" prints { ok, files }; "doctor --json" prints the full check list.
+
+Exit codes:
+  0   success
+  1   operational failure (failed runs with --ci, invalid reports, fm errors)
+  2   usage or environment error (bad flags, missing arguments, unsupported macOS, fm not found)
+
+Capability detection:
+  fm-bench probes "fm --help" and "fm respond --help" once per run. Metrics the
+  installed fm cannot supply are reported as unavailable instead of being
+  guessed, and unsupported models are refused before any benchmark starts.
+
 Examples:
   fm-bench
-  fm-bench --models system,pcc --runs 3 --profile stress
+  fm-bench --models system --runs 3 --profile stress
   fm-bench --profile client --sweep-concurrency 1,2 --request-rate 0.5
   fm-bench --prompt "Reply with exactly: ok" --json --out bench.json
   fm-bench --profile reasoning --runs 5 --retry 2
+  fm-bench models
+  fm-bench doctor --json
   fm-bench compare before.json after.json
   fm-bench compare before.json after.json --json
   fm-bench compare before.json after.json --strict
@@ -793,7 +875,5 @@ Examples:
   fm-bench history ./reports
   fm-bench history ./reports --json
   fm-bench legend
-  fm-bench models
-  fm-bench doctor
 `;
 }

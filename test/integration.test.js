@@ -1,0 +1,420 @@
+// Integration tests: drive the shipped CLI entry point against a deterministic
+// fake `fm` so behaviour is checked through the real code path rather than
+// around it.
+//
+// Covered failure modes: normal response, streaming, slow output, malformed
+// output, process failure, timeout, unavailable model, quota failure,
+// partial stream, and interrupted process.
+
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { cliPath, fakeFmPath, runCli, runCliWithFakeFm } from './helpers.js';
+
+const QUICK = ['--profile', 'quick', '--runs', '1', '--no-progress'];
+
+function parseJsonReport(stdout) {
+  return JSON.parse(stdout);
+}
+
+function tempDir() {
+  return mkdtempSync(join(tmpdir(), 'fm-bench-int-'));
+}
+
+test('models lists discovered models without leaking fm error text', () => {
+  const result = runCliWithFakeFm(['models']);
+  assert.equal(result.code, 0);
+  assert.match(result.stdout, /system/);
+  assert.match(result.stdout, /count-tokens/);
+  assert.doesNotMatch(result.stdout, /Unknown command/);
+  assert.doesNotMatch(result.stdout, /quota-usage/);
+  assert.doesNotMatch(result.stdout, /\| QUOTA \|/);
+  assert.match(result.stdout, /no quota command/);
+});
+
+test('models keeps a quota column when the fm build exposes quota', () => {
+  const result = runCliWithFakeFm(['models'], 'quota');
+  assert.equal(result.code, 0);
+  assert.match(result.stdout, /QUOTA/);
+  assert.match(result.stdout, /1000 requests remaining/);
+});
+
+test('models --json stays a plain array of models', () => {
+  const result = runCliWithFakeFm(['models', '--json']);
+  assert.equal(result.code, 0);
+  const models = JSON.parse(result.stdout);
+  assert.ok(Array.isArray(models));
+  assert.equal(models[0].name, 'system');
+  assert.equal(models[0].available, true);
+});
+
+test('a benchmark run produces measured TTFT, latency, and token counts', () => {
+  const result = runCliWithFakeFm([...QUICK, '--json']);
+  assert.equal(result.code, 0);
+
+  const report = parseJsonReport(result.stdout);
+  assert.equal(report.tool, 'fm-bench');
+  assert.equal(report.schemaVersion, '1');
+  const measured = report.results.filter((run) => run.ok);
+  assert.equal(measured.length, 1);
+  assert.ok(measured[0].firstTokenMs > 0, 'expected a measured TTFT');
+  assert.ok(measured[0].durationMs > 0, 'expected a measured end-to-end latency');
+  assert.ok(measured[0].firstTokenMs <= measured[0].durationMs);
+  assert.equal(measured[0].attempts, 1);
+  assert.equal(measured[0].promptTokens, 4);
+  assert.ok(measured[0].outputTokens > 0);
+  assert.ok(measured[0].tpotMs > 0, 'expected a derived TPOT for a multi-chunk stream');
+  assert.equal(report.summary[0].successes, 1);
+  assert.equal(report.summary[0].failures, 0);
+  assert.equal(report.summary[0].latency.ci95Low, null, 'one sample has no confidence interval');
+  assert.equal(report.summary[0].latency.cv, null, 'one sample has no coefficient of variation');
+});
+
+test('report records capabilities and per-metric availability', () => {
+  const result = runCliWithFakeFm([...QUICK, '--json']);
+  const report = parseJsonReport(result.stdout);
+
+  assert.deepEqual(report.capabilities.models.map((model) => model.name), ['system']);
+  assert.equal(report.capabilities.features.tokenCountCommand, 'count-tokens');
+  assert.equal(report.capabilities.bin, fakeFmPath());
+  assert.match(report.capabilities.digest, /^[0-9a-f]{16}$/);
+
+  assert.equal(report.metrics.e2eLatency.available, true);
+  assert.equal(report.metrics.e2eLatency.kind, 'measured');
+  assert.equal(report.metrics.ttft.available, true);
+  assert.equal(report.metrics.ttft.kind, 'proxy');
+  assert.equal(report.metrics.quota.available, false);
+  assert.match(report.metrics.quota.unavailableReason, /no quota command/);
+});
+
+test('--no-stream reports TTFT as unavailable instead of inventing it', () => {
+  const result = runCliWithFakeFm([...QUICK, '--json', '--no-stream']);
+  assert.equal(result.code, 0);
+  const report = parseJsonReport(result.stdout);
+  assert.equal(report.metrics.ttft.available, false);
+  assert.equal(report.results[0].firstTokenMs, null);
+  assert.equal(report.results[0].tpotMs, null);
+  assert.ok(report.results[0].durationMs > 0);
+});
+
+test('a build without token counting reports blank token metrics and a warning', () => {
+  const result = runCliWithFakeFm([...QUICK, '--json'], 'no-token-count');
+  assert.equal(result.code, 0);
+  const report = parseJsonReport(result.stdout);
+  assert.equal(report.metrics.promptTokens.available, false);
+  assert.equal(report.results[0].promptTokens, null);
+  assert.equal(report.results[0].outputTokens, null);
+  assert.equal(report.results[0].tokensPerSecond, null);
+  assert.equal(report.results[0].firstTokenMs > 0, true, 'latency is still measurable');
+  assert.match(report.capabilities.warnings.join('\n'), /no token-counting command/);
+});
+
+test('a legacy token-count command is still used', () => {
+  const result = runCliWithFakeFm([...QUICK, '--json'], 'legacy-token-count');
+  assert.equal(result.code, 0);
+  const report = parseJsonReport(result.stdout);
+  assert.equal(report.capabilities.features.tokenCountCommand, 'token-count');
+  assert.equal(report.results[0].promptTokens, 4);
+});
+
+test('table output names unavailable metrics instead of leaving blank columns', () => {
+  const result = runCliWithFakeFm([...QUICK], 'no-token-count');
+  assert.equal(result.code, 0);
+  assert.match(result.stdout, /unavailable:/);
+  assert.match(result.stdout, /token-counting command/);
+});
+
+test('models the fm build does not expose are refused with our own wording', () => {
+  // The verified macOS 27 build only ships the `system` model, so asking for
+  // `pcc` must not surface fm's raw argument-error text.
+  const json = runCliWithFakeFm(['models', '--models', 'pcc', '--json']);
+  assert.equal(json.code, 0);
+  const [model] = JSON.parse(json.stdout);
+  assert.equal(model.name, 'pcc');
+  assert.equal(model.available, false);
+  assert.equal(model.unsupported, true);
+  assert.equal(model.reason, 'not supported by this fm build (supported: system)');
+
+  const text = runCliWithFakeFm(['models', '--models', 'pcc']);
+  assert.equal(text.code, 0);
+  assert.match(text.stdout, /pcc/);
+  assert.doesNotMatch(text.stdout, /is invalid for/);
+  assert.doesNotMatch(text.stdout, /Usage:/);
+  const normalized = text.stdout.replace(/[\u2500-\u257f]/g, ' ').replace(/\s+/g, ' ');
+  assert.match(normalized, /not supported by this fm build/);
+});
+
+test('a model listed by fm but reported unusable is skipped with the fm reason', () => {
+  const result = runCliWithFakeFm(['models', '--models', 'pcc'], 'multi-model');
+  assert.equal(result.code, 0);
+  assert.match(result.stdout, /pcc/);
+  assert.match(result.stdout, /unavailable/);
+  assert.doesNotMatch(result.stdout, /is invalid for/);
+});
+
+test('a slow but successful model still measures correctly', () => {
+  const result = runCliWithFakeFm([...QUICK, '--json'], 'slow');
+  assert.equal(result.code, 0);
+  const report = parseJsonReport(result.stdout);
+  assert.equal(report.results[0].ok, true);
+  assert.ok(report.results[0].firstTokenMs < 200, 'the first chunk is written immediately');
+  assert.ok(report.results[0].secondChunkMs >= 380, 'expected the 400ms inter-chunk delay to be visible');
+  assert.ok(report.results[0].generationMs >= 1500);
+  assert.ok(report.results[0].stdoutChunks >= 3);
+});
+
+test('malformed fm output does not crash and still produces a valid report', () => {
+  const result = runCliWithFakeFm([...QUICK, '--json'], 'malformed');
+  assert.equal(result.code, 0);
+  const report = parseJsonReport(result.stdout);
+  assert.equal(report.results.length, 1);
+  assert.equal(report.results[0].ok, true);
+  assert.ok(report.results[0].chars >= 0);
+  assert.equal(typeof report.results[0].outputHash, 'string');
+});
+
+test('a failing fm process is reported honestly with a non-zero ci exit', () => {
+  const result = runCliWithFakeFm([...QUICK, '--json'], 'fail');
+  assert.equal(result.code, 0, 'a failed run is data, not a CLI failure');
+  const report = parseJsonReport(result.stdout);
+  assert.equal(report.results[0].ok, false);
+  assert.match(report.results[0].error, /failed to produce a response/);
+  assert.equal(report.results[0].firstTokenMs, null);
+  assert.equal(report.results[0].outputTokens, null);
+  assert.equal(report.summary[0].failures, 1);
+  assert.equal(report.summary[0].successRate, 0);
+  assert.equal(report.summary[0].latency.avg, null);
+});
+
+test('a failing run with --ci exits 1', () => {
+  const result = runCliWithFakeFm([...QUICK, '--ci'], 'fail');
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /fm-bench ci: FAIL/);
+  assert.match(result.stderr, /1 run\(s\) failed/);
+});
+
+test('a timed-out fm call is reported as a timeout, not a measurement', () => {
+  const result = runCliWithFakeFm(['--profile', 'quick', '--runs', '1', '--no-progress', '--json', '--timeout-ms', '300'], 'timeout');
+  assert.equal(result.code, 0);
+  const report = parseJsonReport(result.stdout);
+  assert.equal(report.results[0].ok, false);
+  assert.equal(report.results[0].timedOut ?? true, true);
+  assert.match(report.results[0].error, /timed out after 300ms/);
+  assert.equal(report.results[0].firstTokenMs, null);
+  assert.equal(report.results[0].durationMs < 5000, true);
+});
+
+test('an unavailable model is skipped with the fm reason preserved', () => {
+  const result = runCliWithFakeFm(['models', '--json'], 'unavailable');
+  assert.equal(result.code, 0);
+  const models = JSON.parse(result.stdout);
+  assert.equal(models[0].available, false);
+  assert.match(models[0].reason, /unavailable/);
+});
+
+test('a partial stream is a failure and yields no fabricated decode metrics', () => {
+  const result = runCliWithFakeFm([...QUICK, '--json'], 'partial');
+  assert.equal(result.code, 0);
+  const report = parseJsonReport(result.stdout);
+  assert.equal(report.results[0].ok, false);
+  assert.match(report.results[0].error, /stream interrupted/);
+  assert.equal(report.results[0].tpotMs, null);
+  assert.equal(report.results[0].decodeTokensPerSecond, null);
+  assert.equal(report.results[0].outputTokenThroughput ?? null, null);
+});
+
+test('retries are counted without duplicating results', () => {
+  const result = runCliWithFakeFm([...QUICK, '--json', '--retry', '1'], 'fail');
+  assert.equal(result.code, 0);
+  const report = parseJsonReport(result.stdout);
+  assert.equal(report.results.length, 1);
+  assert.equal(report.results[0].attempts, 2);
+  assert.equal(report.summary[0].attempted, 1);
+  assert.equal(report.summary[0].retries ?? report.summary[0].retried, 1);
+});
+
+test('an unusable fm build fails fast with exit code 2', () => {
+  const result = runCliWithFakeFm([...QUICK, '--json'], 'error-help');
+  assert.equal(result.code, 2);
+  assert.match(result.stderr, /No usable fm commands/);
+  assert.equal(result.stdout, '');
+});
+
+test('a host without fm at all fails with an actionable error', () => {
+  const result = runCli([...QUICK], { env: { FM_BIN: '/nonexistent/fm' } });
+  assert.equal(result.code, 2);
+  assert.match(result.stderr, /Unable to execute/);
+  assert.match(result.stderr, /FM_BIN/);
+});
+
+test('JSON stdout stays machine-readable when progress is forced on', () => {
+  const result = runCliWithFakeFm([...QUICK, '--json', '--progress']);
+  assert.equal(result.code, 0);
+  assert.doesNotThrow(() => JSON.parse(result.stdout));
+  assert.doesNotMatch(result.stdout, /fm-bench\s+(capabilities|prompts|benchmark)/);
+});
+
+test('interrupting the benchmark terminates the fm child process', async () => {
+  const dir = tempDir();
+  const pidFile = join(dir, 'pids.txt');
+  const child = spawn(process.execPath, [cliPath(), '--profile', 'quick', '--runs', '1', '--no-progress'], {
+    env: {
+      ...process.env,
+      FM_BIN: fakeFmPath(),
+      FAKE_FM_SCENARIO: 'interrupt',
+      FAKE_FM_PID_FILE: pidFile
+    },
+    stdio: ['ignore', 'pipe', 'pipe']
+  });
+
+  const pids = await waitForPids(pidFile);
+  assert.ok(pids.length > 0, 'expected the fake fm to report its pid');
+
+  child.kill('SIGINT');
+  const exit = await new Promise((resolve) => child.on('exit', (code, signal) => resolve({ code, signal })));
+
+  assert.equal(exit.code, 130, `expected exit 130, got ${JSON.stringify(exit)}`);
+  await waitFor(() => pids.every((pid) => !isAlive(pid)), 3_000);
+});
+
+test('validate and export round-trip a real report', () => {
+  const dir = tempDir();
+  const reportPath = join(dir, 'report.json');
+  const run = runCliWithFakeFm([...QUICK, '--json', '--out', reportPath]);
+  assert.equal(run.code, 0);
+  assert.ok(existsSync(reportPath));
+
+  const validate = runCli(['validate', reportPath, '--json']);
+  assert.equal(validate.code, 0);
+  const validated = JSON.parse(validate.stdout);
+  assert.equal(validated.ok, true);
+
+  const htmlPath = join(dir, 'report.html');
+  const exported = runCli(['export', reportPath, '-o', htmlPath]);
+  assert.equal(exported.code, 0);
+  assert.match(readFileSync(htmlPath, 'utf8'), /fm-bench benchmark report/);
+
+  const compare = runCli(['compare', reportPath, reportPath, '--json']);
+  assert.equal(compare.code, 0);
+  const diff = JSON.parse(compare.stdout);
+  assert.equal(diff.compatibility.suiteMatch, true);
+  assert.equal(diff.rows.length, 1);
+  assert.equal(diff.rows[0].ttftP50.delta, 0);
+});
+
+test('history renders saved reports and json output is parseable', () => {
+  const dir = tempDir();
+  runCliWithFakeFm([...QUICK, '--json', '--output-dir', dir, '--tag', 'nightly']);
+  const text = runCli(['history', dir]);
+  assert.equal(text.code, 0);
+  assert.match(text.stdout, /fm-bench history \(1 report\)/);
+  assert.match(text.stdout, /nightly/);
+
+  const json = runCli(['history', dir, '--json']);
+  assert.equal(json.code, 0);
+  const entries = JSON.parse(json.stdout);
+  assert.equal(entries.length, 1);
+  assert.match(entries[0].file, /fm-bench_.*\.json$/);
+});
+
+test('usage errors exit 2 and invalid reports exit 1', () => {
+  const unknown = runCli(['--not-a-flag']);
+  assert.equal(unknown.code, 2);
+  assert.match(unknown.stderr, /Unknown option/);
+
+  const badProfile = runCli(['--profile', 'nope']);
+  assert.equal(badProfile.code, 2);
+
+  const missingCompare = runCli(['compare', 'only-one.json']);
+  assert.equal(missingCompare.code, 2);
+
+  const missingValidate = runCli(['validate']);
+  assert.equal(missingValidate.code, 2);
+
+  const dir = tempDir();
+  const invalid = join(dir, 'invalid.json');
+  writeFileSync(invalid, '{"tool":"other"}');
+  const badReport = runCli(['validate', invalid]);
+  assert.equal(badReport.code, 1);
+  assert.match(badReport.stderr, /invalid/);
+
+  const notFound = runCli(['validate', join(dir, 'missing.json')]);
+  assert.equal(notFound.code, 1);
+  assert.match(notFound.stderr, /file not found/);
+
+  const badJson = join(dir, 'broken.json');
+  writeFileSync(badJson, '{not json');
+  const unparseable = runCli(['validate', badJson, '--json']);
+  assert.equal(unparseable.code, 1);
+  assert.equal(JSON.parse(unparseable.stdout).ok, false);
+});
+
+test('doctor --json reports capabilities and exits 0', () => {
+  const result = runCliWithFakeFm(['doctor', '--json']);
+  assert.equal(result.code, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.ok(Array.isArray(payload.checks));
+  assert.equal(payload.capabilities.features.tokenCountCommand, 'count-tokens');
+  assert.ok(payload.checks.some((check) => check.name === 'model:system' && check.ok));
+  assert.equal(result.stderr, '');
+});
+
+function isAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForPids(pidFile) {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    if (existsSync(pidFile)) {
+      const pids = readFileSync(pidFile, 'utf8').trim().split('\n').filter(Boolean).map(Number);
+      if (pids.length > 0) return pids;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  return [];
+}
+
+async function waitFor(predicate, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return true;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  const ok = predicate();
+  assert.ok(ok, 'condition was not met before the timeout');
+  return ok;
+}
+
+test('a benchmark with no usable model fails fast with exit code 2', () => {
+  const unsupported = runCliWithFakeFm([...QUICK, '--json', '--models', 'pcc']);
+  assert.equal(unsupported.code, 2);
+  assert.match(unsupported.stderr, /none of the requested models are usable/);
+  assert.match(unsupported.stderr, /not supported by this fm build \(supported: system\)/);
+  assert.equal(unsupported.stdout, '', 'no partial report on stdout');
+
+  const unavailable = runCliWithFakeFm([...QUICK, '--json'], 'unavailable');
+  assert.equal(unavailable.code, 2);
+  assert.match(unavailable.stderr, /none of the requested models are usable/);
+  assert.match(unavailable.stderr, /unavailable in this context/);
+});
+
+test('a very short answer yields generation time but no noise-dominated decode rate', () => {
+  const result = runCliWithFakeFm([...QUICK, '--json'], 'short-answer');
+  assert.equal(result.code, 0);
+  const report = parseJsonReport(result.stdout);
+  const run = report.results[0];
+  assert.equal(run.ok, true);
+  assert.equal(run.outputTokens, 1);
+  assert.ok(run.generationMs > 0, 'two chunks still allow a generation time');
+  assert.equal(run.tpotMs, null, 'one output token cannot produce an inter-token interval');
+  assert.equal(run.decodeTokensPerSecond, null);
+  assert.equal(report.summary[0].tpot.avg, null);
+});

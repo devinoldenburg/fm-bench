@@ -1,3 +1,12 @@
+/**
+ * Sample statistics for one metric.
+ *
+ * Spread metrics (`stddev`, `cv`, `ci95*`) need at least two samples. With a
+ * single sample they are `null` rather than `0`, because a "0% variation" or a
+ * zero-width confidence interval is invented precision, not a measurement.
+ *
+ * @param {number[]} values
+ */
 export function summarizeNumbers(values) {
   const clean = values.filter((value) => Number.isFinite(value)).sort((a, b) => a - b);
   if (clean.length === 0) {
@@ -20,11 +29,12 @@ export function summarizeNumbers(values) {
 
   const total = clean.reduce((sum, value) => sum + value, 0);
   const avg = total / clean.length;
-  const variance = clean.length > 1
+  const hasSpread = clean.length > 1;
+  const variance = hasSpread
     ? clean.reduce((sum, value) => sum + (value - avg) ** 2, 0) / (clean.length - 1)
-    : 0;
-  const stddev = Math.sqrt(variance);
-  const margin = clean.length > 1 ? tCritical95(clean.length) * (stddev / Math.sqrt(clean.length)) : 0;
+    : null;
+  const stddev = variance == null ? null : Math.sqrt(variance);
+  const margin = hasSpread ? tCritical95(clean.length) * (stddev / Math.sqrt(clean.length)) : null;
   return {
     count: clean.length,
     min: clean[0],
@@ -32,9 +42,9 @@ export function summarizeNumbers(values) {
     avg,
     sum: total,
     stddev,
-    cv: avg !== 0 ? stddev / Math.abs(avg) : null,
-    ci95Low: avg - margin,
-    ci95High: avg + margin,
+    cv: hasSpread && avg !== 0 ? stddev / Math.abs(avg) : null,
+    ci95Low: hasSpread ? avg - margin : null,
+    ci95High: hasSpread ? avg + margin : null,
     p50: percentile(clean, 50),
     p90: percentile(clean, 90),
     p95: percentile(clean, 95),
@@ -42,16 +52,25 @@ export function summarizeNumbers(values) {
   };
 }
 
-export function percentile(sortedValues, percentileValue) {
-  if (sortedValues.length === 0) return null;
-  if (sortedValues.length === 1) return sortedValues[0];
+/**
+ * Percentile with linear interpolation between closest ranks (the same method
+ * as Excel's PERCENTILE.INC / NumPy's default). Accepts unsorted input so
+ * callers cannot silently get a wrong answer from an unsorted array.
+ *
+ * @param {number[]} values
+ * @param {number} percentileValue 0-100
+ */
+export function percentile(values, percentileValue) {
+  const sorted = values.filter((value) => Number.isFinite(value)).sort((a, b) => a - b);
+  if (sorted.length === 0) return null;
+  if (sorted.length === 1) return sorted[0];
 
-  const rank = (percentileValue / 100) * (sortedValues.length - 1);
+  const rank = (percentileValue / 100) * (sorted.length - 1);
   const low = Math.floor(rank);
   const high = Math.ceil(rank);
-  if (low === high) return sortedValues[low];
+  if (low === high) return sorted[low];
   const weight = rank - low;
-  return sortedValues[low] * (1 - weight) + sortedValues[high] * weight;
+  return sorted[low] * (1 - weight) + sorted[high] * weight;
 }
 
 export function summarizeByModel(results, modelStatuses = [], options = {}) {
@@ -66,6 +85,7 @@ export function summarizeByModel(results, modelStatuses = [], options = {}) {
         concurrency,
         description: status.description,
         available: status.available,
+        unsupported: Boolean(status.unsupported),
         skippedReason: status.available ? '' : status.reason || 'Unavailable',
         results: []
       });
@@ -80,6 +100,7 @@ export function summarizeByModel(results, modelStatuses = [], options = {}) {
         concurrency: result.concurrency,
         description: '',
         available: true,
+        unsupported: false,
         skippedReason: '',
         results: []
       });
@@ -98,7 +119,7 @@ export function summarizeByModel(results, modelStatuses = [], options = {}) {
     const tpot = summarizeNumbers(successes.map((result) => result.tpotMs).filter((value) => value != null));
     const promptTokens = summarizeNumbers(successes.map((result) => result.promptTokens).filter((value) => value != null));
     const outputTokens = summarizeNumbers(successes.map((result) => result.outputTokens).filter((value) => value != null));
-    const charsPerSecond = summarizeNumbers(successes.map((result) => result.charsPerSecond));
+    const charsPerSecond = summarizeNumbers(successes.map((result) => result.charsPerSecond).filter((value) => value != null));
     const tokensPerSecond = summarizeNumbers(successes.map((result) => result.tokensPerSecond).filter((value) => value != null));
     const decodeTokensPerSecond = summarizeNumbers(successes.map((result) => result.decodeTokensPerSecond).filter((value) => value != null));
     const prefillTokensPerSecond = summarizeNumbers(successes.map((result) => result.prefillTokensPerSecond).filter((value) => value != null));
@@ -110,14 +131,18 @@ export function summarizeByModel(results, modelStatuses = [], options = {}) {
     const outputTokenThroughput = outputTokens.sum > 0 && windowMs > 0 ? outputTokens.sum / (windowMs / 1000) : null;
     const totalTokens = promptTokens.sum + outputTokens.sum;
     const totalTokenThroughput = totalTokens > 0 && windowMs > 0 ? totalTokens / (windowMs / 1000) : null;
+    const attempts = entry.results.reduce((sum, result) => sum + (result.attempts ?? 1), 0);
 
     return {
       model: entry.model,
       concurrency: entry.concurrency,
       description: entry.description,
       available: entry.available,
+      unsupported: entry.unsupported,
       skippedReason: entry.skippedReason,
       attempted: entry.results.length,
+      attempts,
+      retried: entry.results.length > 0 ? Math.max(0, attempts - entry.results.length) : 0,
       successes: successes.length,
       failures: failures.length,
       successRate: entry.results.length > 0 ? successes.length / entry.results.length : null,
@@ -147,6 +172,10 @@ function summaryKey(model, concurrency) {
   return `${model}::${concurrency ?? 'default'}`;
 }
 
+// Two-sided 95% t critical values. Exact table entries up to 30 degrees of
+// freedom, then the standard 2.0 / 1.96 approximations for larger samples.
+// fm-bench uses this for a mean confidence interval, which is context for
+// small samples rather than a hypothesis test.
 function tCritical95(n) {
   const df = Math.max(1, n - 1);
   const table = {

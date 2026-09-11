@@ -70,10 +70,11 @@ test('renderLegend explains table columns and CV thresholds', () => {
   assert.match(report, /TTFT/);
   assert.match(report, /GOOD RPS/);
   assert.match(report, /CV/);
-  const normalized = stripAnsi(report).replace(/[|\n]/g, ' ').replace(/\s+/g, ' ');
-  assert.match(normalized, /Lower is steadier\. Green/i);
-  assert.match(normalized, /<=10%, yellow <=25%, red/i);
-  assert.match(normalized, />25%/);
+  const normalized = stripAnsi(report).replace(/\s+/g, ' ');
+  assert.match(normalized, /Lower is steadier\./);
+  assert.match(normalized, /Green <=10%, yellow/);
+  assert.match(normalized, /<=25%, red >25%/);
+  assert.match(normalized, /\| TABLE \| COLUMN \| SOURCE \| DEFINITION \| RULE \|/);
   assert.equal(legendEntries().find((item) => item.column === 'CV').rule, 'Lower is steadier. Green <=10%, yellow <=25%, red >25%.');
   assert.doesNotMatch(report, /…/);
   for (const line of report.split('\n')) {

@@ -126,9 +126,25 @@ export function validateReport(value) {
   for (const key of REQUIRED_TOP_LEVEL) {
     if (!(key in report)) errors.push(`missing required field: ${key}`);
   }
-  if (!Array.isArray(report.summary)) errors.push('summary must be an array');
+  if (!Array.isArray(report.summary)) {
+    errors.push('summary must be an array');
+  } else {
+    for (const [index, item] of report.summary.entries()) {
+      if (!item || typeof item !== 'object') {
+        errors.push(`summary[${index}] must be an object`);
+        continue;
+      }
+      const row = /** @type {Record<string, unknown>} */ (item);
+      if (typeof row.model !== 'string' || row.model === '') {
+        errors.push(`summary[${index}].model must be a non-empty string`);
+      }
+    }
+  }
   if (report.schemaVersion != null && report.schemaVersion !== REPORT_SCHEMA_VERSION) {
     errors.push(`unsupported schemaVersion: ${report.schemaVersion} (expected ${REPORT_SCHEMA_VERSION})`);
+  }
+  if (report.metrics != null && (typeof report.metrics !== 'object' || Array.isArray(report.metrics))) {
+    errors.push('metrics must be an object when present');
   }
   if (errors.length > 0) return { ok: false, errors };
   return { ok: true, report };

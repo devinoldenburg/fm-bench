@@ -43,3 +43,34 @@ test('renderCompareReport includes macOS build metadata', () => {
   assert.match(text, /macOS 27\.0 \(26A5378j\)/);
   assert.match(text, /macOS build differs/);
 });
+
+test('diffReports flags invalid comparison inputs', () => {
+  const invalid = diffReports(before, { tool: 'other', summary: [] });
+  assert.equal(invalid.compatibility.compatible, false);
+  assert.match(invalid.compatibility.errors.join(' '), /not a valid fm-bench report/);
+
+  const rendered = renderCompareReport(invalid, { color: false, ascii: true });
+  assert.match(rendered, /fm-bench compare/);
+});
+
+test('diffReports handles a model present in only one report', () => {
+  const onlyAfter = {
+    ...after,
+    summary: [...after.summary, { model: 'pcc', concurrency: 1, available: true, successes: 2, failures: 0, successRate: 1, ttft: { p50: 100, p95: 120 }, latency: { p50: 900, p95: 1000, cv: 0.1 } }]
+  };
+  const diff = diffReports(before, onlyAfter);
+  assert.equal(diff.rows.length, 2);
+  const pcc = diff.rows.find((row) => row.model === 'pcc');
+  assert.equal(pcc.ttftP50.before, null);
+  assert.equal(pcc.ttftP50.delta, null);
+  assert.equal(pcc.ttftP50.after, 100);
+});
+
+test('diffReports warns when hardware differs', () => {
+  const otherHardware = {
+    ...after,
+    environment: { ...after.environment, hwModel: 'Mac16,1' }
+  };
+  const diff = diffReports(before, otherHardware);
+  assert.ok(diff.compatibility.warnings.some((warning) => /hardware model differs/.test(warning)));
+});

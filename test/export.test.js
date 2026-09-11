@@ -15,3 +15,15 @@ test('renderHtmlReport embeds metadata and JSON', () => {
   assert.match(html, /&quot;tool&quot;: &quot;fm-bench&quot;/);
   assert.match(html, /schemaVersion/);
 });
+test('renderHtmlReport escapes prompt text, notes, and embedded JSON', () => {
+  const hostile = {
+    ...report,
+    options: { ...report.options, note: '<script>alert("note")</script>', tags: ['<img src=x onerror=1>'] },
+    prompts: [{ id: 'x', prompt: '</pre><script>alert(1)</script>' }]
+  };
+  const html = renderHtmlReport(hostile);
+  assert.doesNotMatch(html, /<script>alert/);
+  assert.doesNotMatch(html, /<img src=x/);
+  assert.match(html, /&lt;script&gt;alert/);
+  assert.match(html, /&quot;tool&quot;/);
+});

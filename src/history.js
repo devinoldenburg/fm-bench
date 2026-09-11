@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { stripAnsi } from './ansi.js';
 import { formatMs, formatNumber, formatPercent } from './table.js';
 
 export async function loadHistory(dir) {
@@ -100,7 +101,7 @@ export function renderHistoryReport(reports, options = {}) {
 }
 
 function fit(text, width) {
-  const str = String(text ?? '');
+  const str = stripAnsi(String(text ?? '')).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '');
   if (str.length <= width) return str + ' '.repeat(width - str.length);
   return `${str.slice(0, width - 1)}…`;
 }

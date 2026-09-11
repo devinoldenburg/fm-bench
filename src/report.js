@@ -16,6 +16,7 @@ export function flattenResults(results) {
     concurrency: result.concurrency ?? '',
     prompt_id: result.promptId,
     run: result.run,
+    attempts: result.attempts ?? 1,
     ok: result.ok,
     duration_ms: round(result.durationMs),
     ttft_ms: round(result.firstTokenMs),
@@ -58,9 +59,19 @@ export async function writeReport(filePath, payload, format) {
 
 function csvEscape(value) {
   const text = String(value ?? '');
-  if (/[",\n\r]/.test(text)) {
-    return `"${text.replaceAll('"', '""')}"`;
+  const safe = guardFormula(text);
+  if (/[",\n\r]/.test(safe)) {
+    return `"${safe.replaceAll('"', '""')}"`;
   }
+  return safe;
+}
+
+// Spreadsheet programs execute cells that start with =, +, @, or a non-numeric
+// leading -. Prompt text and captured output are untrusted input, so prefix
+// those cells with a single quote to keep them literal text.
+function guardFormula(text) {
+  if (/^[=+@\t\r]/.test(text)) return `'${text}`;
+  if (text.startsWith('-') && !/^-?\d+(\.\d+)?$/.test(text)) return `'${text}`;
   return text;
 }
 

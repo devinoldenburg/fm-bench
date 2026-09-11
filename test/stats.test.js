@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { summarizeByModel, summarizeNumbers } from '../src/stats.js';
+import { percentile, summarizeByModel, summarizeNumbers } from '../src/stats.js';
 
 test('summarizeNumbers computes basic latency stats', () => {
   const summary = summarizeNumbers([30, 10, 20]);
@@ -123,4 +123,143 @@ test('summarizeByModel keeps concurrency operating points separate', () => {
   assert.equal(summary.length, 2);
   assert.deepEqual(summary.map((item) => item.concurrency), [1, 2]);
   assert.deepEqual(summary.map((item) => item.latency.avg), [1000, 2000]);
+});
+
+test('summarizeNumbers reports no spread for a single sample', () => {
+  const summary = summarizeNumbers([42]);
+  assert.equal(summary.count, 1);
+  assert.equal(summary.min, 42);
+  assert.equal(summary.max, 42);
+  assert.equal(summary.avg, 42);
+  assert.equal(summary.p50, 42);
+  // A one-sample "0% variation" or zero-width CI would be invented precision.
+  assert.equal(summary.stddev, null);
+  assert.equal(summary.cv, null);
+  assert.equal(summary.ci95Low, null);
+  assert.equal(summary.ci95High, null);
+});
+
+test('summarizeNumbers returns nulls for zero samples', () => {
+  const summary = summarizeNumbers([]);
+  assert.deepEqual(summary, {
+    count: 0,
+    min: null,
+    max: null,
+    avg: null,
+    sum: 0,
+    stddev: null,
+    cv: null,
+    ci95Low: null,
+    ci95High: null,
+    p50: null,
+    p90: null,
+    p95: null,
+    p99: null
+  });
+});
+
+test('summarizeNumbers computes known two-sample statistics', () => {
+  const summary = summarizeNumbers([100, 200]);
+  assert.equal(summary.count, 2);
+  assert.equal(summary.avg, 150);
+  assert.ok(Math.abs(summary.stddev - 70.710678) < 1e-5);
+  assert.ok(Math.abs(summary.cv - 0.4714045) < 1e-6);
+  // Two samples use t(1) = 12.706, so the interval is deliberately wide.
+  assert.ok(Math.abs(summary.ci95Low - (150 - 12.706 * 50)) < 1e-6);
+  assert.ok(Math.abs(summary.ci95High - (150 + 12.706 * 50)) < 1e-6);
+  assert.equal(summary.p50, 150);
+});
+
+test('summarizeNumbers CI narrows as the sample grows', () => {
+  const small = summarizeNumbers([100, 200, 101, 199]);
+  const large = summarizeNumbers([100, 200, 101, 199, 100, 200, 101, 199, 100, 200, 101, 199]);
+  const smallWidth = small.ci95High - small.ci95Low;
+  const largeWidth = large.ci95High - large.ci95Low;
+  assert.ok(largeWidth < smallWidth);
+  assert.ok(small.ci95Low < small.avg && small.ci95High > small.avg);
+});
+
+test('summarizeNumbers ignores non-finite values', () => {
+  const summary = summarizeNumbers([10, null, undefined, Number.NaN, 20, Infinity]);
+  assert.equal(summary.count, 2);
+  assert.equal(summary.min, 10);
+  assert.equal(summary.max, 20);
+});
+
+test('percentile interpolates and tolerates unsorted input', () => {
+  assert.equal(percentile([10, 20, 30, 40], 25), 17.5);
+  assert.equal(percentile([10, 20, 30, 40], 50), 25);
+  assert.equal(percentile([10, 20, 30, 40], 100), 40);
+  assert.equal(percentile([10, 20, 30, 40], 0), 10);
+  assert.equal(percentile([3, 1, 2], 50), 2);
+  assert.equal(percentile([5], 95), 5);
+  assert.equal(percentile([], 50), null);
+  assert.equal(percentile([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 90), 9.1);
+});
+
+test('summarizeByModel counts retries without inventing results', () => {
+  const summary = summarizeByModel([
+    {
+      model: 'system',
+      promptId: 'p1',
+      ok: true,
+      attempts: 3,
+      durationMs: 100,
+      charsPerSecond: 10,
+      startOffsetMs: 0,
+      endOffsetMs: 100
+    }
+  ], [{ name: 'system', available: true }]);
+
+  assert.equal(summary[0].attempted, 1);
+  assert.equal(summary[0].attempts, 3);
+  assert.equal(summary[0].retried, 2);
+  assert.equal(summary[0].successes, 1);
+});
+
+test('summarizeByModel marks unsupported models distinctly', () => {
+  const summary = summarizeByModel([], [
+    { name: 'pcc', available: false, unsupported: true, reason: 'not supported by this fm build (supported: system)' }
+  ]);
+  assert.equal(summary[0].available, false);
+  assert.equal(summary[0].unsupported, true);
+  assert.equal(summary[0].attempted, 0);
+  assert.match(summary[0].skippedReason, /not supported by this fm build/);
+});
+
+test('summarizeByModel reports goodput as zero when no run meets the SLO', () => {
+  const summary = summarizeByModel([
+    {
+      model: 'system',
+      promptId: 'p1',
+      ok: true,
+      good: false,
+      durationMs: 5000,
+      firstTokenMs: 900,
+      charsPerSecond: 10,
+      startOffsetMs: 0,
+      endOffsetMs: 5000
+    }
+  ], [{ name: 'system', available: true }]);
+
+  assert.equal(summary[0].goodputRate, 0);
+  assert.equal(summary[0].goodputRps, 0);
+});
+
+test('summarizeByModel leaves goodput unmeasured without an SLO verdict', () => {
+  const summary = summarizeByModel([
+    {
+      model: 'system',
+      promptId: 'p1',
+      ok: true,
+      good: null,
+      durationMs: 500,
+      charsPerSecond: 10,
+      startOffsetMs: 0,
+      endOffsetMs: 500
+    }
+  ], [{ name: 'system', available: true }]);
+
+  assert.equal(summary[0].goodputRate, null);
+  assert.equal(summary[0].goodputRps, null);
 });

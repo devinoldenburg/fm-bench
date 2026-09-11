@@ -1,58 +1,14 @@
-import crypto from 'node:crypto';
 import os from 'node:os';
 import { stripAnsi } from './ansi.js';
+import { detectFmCapabilities } from './capabilities.js';
+import { firstLine, isUnsupportedModelError, parseAvailabilityOutput } from './fm-help.js';
 import { runProcess } from './process.js';
 import { parseBatteryOutput, parseThermalOutput } from './system.js';
 
-const DEFAULT_MODELS = [
-  { name: 'system', description: 'On-device Apple Foundation Model' },
-  { name: 'pcc', description: 'Apple Foundation Model on Private Cloud Compute' }
-];
+export { parseModelsFromHelp, parseAvailabilityOutput } from './fm-help.js';
 
 export function fmBinaryFromOptions(options = {}) {
   return options.fmBin || process.env.FM_BIN || 'fm';
-}
-
-export function parseModelsFromHelp(helpText) {
-  const clean = stripAnsi(helpText);
-  const lines = clean.split(/\r?\n/);
-  const models = new Map();
-  let inModels = false;
-
-  for (const line of lines) {
-    if (/^\s*MODELS\s*$/.test(line)) {
-      inModels = true;
-      continue;
-    }
-
-    if (inModels && /^\s*[A-Z][A-Z -]+\s*$/.test(line) && !/^\s*MODELS\s*$/.test(line)) {
-      inModels = false;
-    }
-
-    if (inModels) {
-      const match = line.match(/^\s*([A-Za-z0-9._:-]+)\s{2,}(.+?)\s*$/);
-      if (match) {
-        models.set(match[1], {
-          name: match[1],
-          description: match[2].replace(/\s*\(default\)\s*$/, '').trim()
-        });
-      }
-    }
-
-    const optionMatch = /--model\b/.test(line)
-      ? line.match(/\bmodel\b.*?\(([^)]+)\)/i)
-      : null;
-    if (optionMatch) {
-      for (const raw of optionMatch[1].split(',')) {
-        const name = raw.trim();
-        if (/^[A-Za-z0-9._:-]+$/.test(name) && !models.has(name)) {
-          models.set(name, { name, description: '' });
-        }
-      }
-    }
-  }
-
-  return [...models.values()];
 }
 
 export async function getFmHelp(fmBin, timeoutMs = 10_000) {
@@ -69,40 +25,42 @@ export async function getFmHelp(fmBin, timeoutMs = 10_000) {
   };
 }
 
+/**
+ * Discover models, preferring an already-detected capability probe so a run
+ * does not spawn `fm --help` more than once.
+ * @param {Record<string, any>} options
+ */
 export async function discoverModels(options = {}) {
   const fmBin = fmBinaryFromOptions(options);
-  const help = await getFmHelp(fmBin, options.timeoutMs ?? 10_000);
-  let models = parseModelsFromHelp(help.text);
-
-  if (models.length === 0 && /Apple Foundation Models CLI/i.test(stripAnsi(help.text))) {
-    models = DEFAULT_MODELS;
-  }
-
+  const capabilities = options.capabilities ?? await detectFmCapabilities(fmBin, options);
   return {
     fmBin,
-    models,
-    help: stripAnsi(help.text)
+    models: capabilities.models,
+    help: capabilities.help,
+    capabilities
   };
 }
 
-export function parseAvailabilityOutput(model, output, code) {
-  const clean = stripAnsi(output).trim();
-  const lower = clean.toLowerCase();
-  const modelLower = model.toLowerCase();
-  const hasError = /\berror:|\bunavailable\b|\bnot available\b|\bnot supported\b/.test(lower);
-  const hasAvailable = new RegExp(`\\b${escapeRegExp(modelLower)}\\b[\\s\\S]{0,80}\\bavailable\\b|\\bavailable\\b[\\s\\S]{0,80}\\b${escapeRegExp(modelLower)}\\b`).test(lower)
-    || lower.includes(`${modelLower} model available`)
-    || lower.includes(`${titleCase(modelLower)} model available`.toLowerCase());
-
-  return {
-    model,
-    available: code === 0 && hasAvailable && !hasError,
-    raw: clean,
-    reason: hasError ? clean : ''
-  };
-}
-
+/**
+ * Check one model against the detected `fm` build.
+ *
+ * Models the build does not expose are reported as unsupported without
+ * spawning `fm` at all, so a raw argument-error blob from `fm` can never end
+ * up in a report or in `fm-bench models` output.
+ */
 export async function checkModelAvailability(fmBin, model, options = {}) {
+  const capabilities = options.capabilities;
+  const known = capabilities?.models?.map((entry) => entry.name) ?? [];
+  if (capabilities && known.length > 0 && !known.includes(model)) {
+    return {
+      model,
+      available: false,
+      unsupported: true,
+      raw: '',
+      reason: `not supported by this fm build (supported: ${known.join(', ')})`
+    };
+  }
+
   const result = await runProcess(fmBin, ['available', '--model', model], {
     timeoutMs: options.timeoutMs ?? 15_000
   });
@@ -111,53 +69,99 @@ export async function checkModelAvailability(fmBin, model, options = {}) {
   if (result.error) {
     parsed.available = false;
     parsed.reason = result.stderr || result.error.message;
+    return parsed;
+  }
+  if (isUnsupportedModelError(output)) {
+    parsed.available = false;
+    parsed.unsupported = true;
+    const supported = known.length > 0 ? ` (supported: ${known.join(', ')})` : '';
+    parsed.reason = `not supported by this fm build${supported}`;
   }
   return parsed;
 }
 
+/**
+ * Query quota information when the build exposes it.
+ * @returns {Promise<{ model: string, supported: boolean, ok: boolean, raw: string, reason: string }>}
+ */
 export async function getQuotaUsage(fmBin, model, options = {}) {
+  const features = options.capabilities?.features;
+  if (features && !features.quota) {
+    return {
+      model,
+      supported: false,
+      ok: false,
+      raw: '',
+      reason: 'unavailable: this fm build exposes no quota command'
+    };
+  }
+
   const result = await runProcess(fmBin, ['quota-usage', '--model', model], {
     timeoutMs: options.timeoutMs ?? 15_000
   });
   const output = stripAnsi(`${result.stdout}${result.stderr}`).trim();
   return {
     model,
+    supported: true,
     ok: result.code === 0,
     raw: output,
-    unavailable: /\bunavailable\b|\bnot available\b|\berror:/i.test(output)
+    reason: result.code === 0 ? '' : firstLine(output)
   };
 }
 
+/**
+ * Count tokens with whichever token-counting command this `fm` build exposes.
+ * Returns `ok: false` with a reason when the build cannot count tokens; it
+ * never invents a count.
+ */
 export async function countTokens(fmBin, text, options = {}) {
-  const result = await runProcess(fmBin, ['token-count', '--quiet'], {
+  const command = options.capabilities?.features?.tokenCountCommand ?? 'count-tokens';
+  const supported = options.capabilities?.features?.tokenCounting ?? true;
+  if (!supported || !command) {
+    return {
+      ok: false,
+      count: null,
+      unsupported: true,
+      raw: '',
+      reason: 'token counting is unavailable in this fm build'
+    };
+  }
+
+  const result = await runProcess(fmBin, [command, '--quiet'], {
     input: text,
     timeoutMs: options.timeoutMs ?? 15_000
   });
   const output = stripAnsi(`${result.stdout}${result.stderr}`).trim();
-  const match = output.match(/-?\d+/);
-  if (result.code !== 0 || !match) {
+  const match = output.match(/\d+/);
+  if (result.error || result.code !== 0 || !match) {
     return {
       ok: false,
       count: null,
-      raw: output
+      raw: output,
+      reason: result.error?.message || firstLine(output) || `fm ${command} exited with code ${result.code}`
     };
   }
   return {
     ok: true,
     count: Number.parseInt(match[0], 10),
-    raw: output
+    raw: output,
+    reason: ''
   };
 }
 
 export async function respond(fmBin, model, prompt, options = {}) {
-  const args = ['respond', '--model', model];
-  const streamed = options.stream !== false;
+  const features = options.capabilities?.features;
+  const streamControl = features ? features.streaming : true;
+  const modelSelection = features ? features.modelSelection : true;
+  const streamed = streamControl && options.stream !== false;
 
-  if (!streamed) args.push('--no-stream');
-  if (options.greedy) args.push('--greedy');
-  if (options.instructions) args.push('--instructions', options.instructions);
-  if (options.useCase) args.push('--use-case', options.useCase);
-  if (options.guardrails) args.push('--guardrails', options.guardrails);
+  const args = ['respond'];
+  if (modelSelection) args.push('--model', model);
+  if (streamControl && !streamed) args.push('--no-stream');
+  if (options.greedy && (features?.greedy ?? true)) args.push('--greedy');
+  if (options.instructions && (features?.instructions ?? true)) args.push('--instructions', options.instructions);
+  if (options.useCase && (features?.useCase ?? true)) args.push('--use-case', options.useCase);
+  if (options.guardrails && (features?.guardrails ?? true)) args.push('--guardrails', options.guardrails);
 
   const result = await runProcess(fmBin, args, {
     input: prompt,
@@ -166,8 +170,10 @@ export async function respond(fmBin, model, prompt, options = {}) {
 
   const output = stripAnsi(result.stdout).trim();
   const errorText = stripAnsi(result.stderr).trim();
+  const failed = result.code !== 0 || result.timedOut;
+
   return {
-    ok: result.code === 0 && !result.timedOut,
+    ok: !failed,
     model,
     prompt,
     output,
@@ -179,11 +185,17 @@ export async function respond(fmBin, model, prompt, options = {}) {
     firstOutputMs: streamed ? result.firstStdoutMs : null,
     streamed,
     stdoutChunks: result.stdoutChunks,
-    stdoutChunkTimesMs: streamed ? result.stdoutChunkTimesMs : []
+    stdoutChunkTimesMs: streamed ? result.stdoutChunkTimesMs : [],
+    error: failed
+      ? (result.timedOut
+        ? `timed out after ${options.timeoutMs ?? 60_000}ms`
+        : firstLine(errorText) || `fm exited with code ${result.code ?? result.signal}`)
+      : ''
   };
 }
 
-export async function collectEnvironment(fmBin) {
+export async function collectEnvironment(fmBin, options = {}) {
+  const capabilities = options.capabilities;
   const swVers = await runProcess('sw_vers', [], { timeoutMs: 5_000 });
   const macOS = stripAnsi(swVers.stdout).trim() || null;
 
@@ -196,15 +208,15 @@ export async function collectEnvironment(fmBin) {
   const batteryResult = await runProcess('pmset', ['-g', 'batt'], { timeoutMs: 5_000 });
   const battery = parseBatteryOutput(`${batteryResult.stdout || ''}${batteryResult.stderr || ''}`);
 
-  let fmHelpDigest = null;
-  try {
-    const help = await getFmHelp(fmBin, 10_000);
-    const text = stripAnsi(help.text).trim();
-    if (text) {
-      fmHelpDigest = crypto.createHash('sha256').update(text).digest('hex').slice(0, 16);
+  let fmHelpDigest = capabilities?.digest ?? null;
+  if (fmHelpDigest == null) {
+    try {
+      const help = await getFmHelp(fmBin, 10_000);
+      const detected = await detectFmCapabilities(fmBin, { help: { text: help.text } });
+      fmHelpDigest = detected.digest;
+    } catch {
+      fmHelpDigest = null;
     }
-  } catch {
-    fmHelpDigest = null;
   }
 
   const memRaw = (memBytes.stdout || '').trim();
@@ -236,12 +248,4 @@ export async function collectEnvironment(fmBin) {
       }
       : null
   };
-}
-
-function escapeRegExp(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function titleCase(value) {
-  return value.slice(0, 1).toUpperCase() + value.slice(1);
 }

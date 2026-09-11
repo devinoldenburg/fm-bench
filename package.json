@@ -14,9 +14,10 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node --test",
-    "lint": "node --check bin/fm-bench.js && find src test -name '*.js' -print0 | xargs -0 -n1 node --check",
-    "prepack": "npm test && npm run lint && npm run check:pack",
+    "test": "node --test test/*.test.js",
+    "lint": "node --check bin/fm-bench.js && find src test scripts \\( -name '*.js' -o -name '*.mjs' \\) -print0 | xargs -0 -n1 node --check",
+    "check": "npm run lint && npm test && npm run check:pack",
+    "prepack": "npm run check >&2",
     "release:patch": "npm version patch && git push --follow-tags",
     "release:minor": "npm version minor && git push --follow-tags",
     "release:major": "npm version major && git push --follow-tags",

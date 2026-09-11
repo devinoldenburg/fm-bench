@@ -195,16 +195,28 @@ export async function loadPrompts(options = {}) {
 
 async function loadPromptFile(filePath) {
   const absolutePath = path.resolve(filePath);
-  const content = await fs.readFile(absolutePath, 'utf8');
+  let content;
+  try {
+    content = await fs.readFile(absolutePath, 'utf8');
+  } catch (error) {
+    throw new Error(error.code === 'ENOENT'
+      ? `Prompt file not found: ${absolutePath}`
+      : `Cannot read prompt file ${absolutePath}: ${error.message}`);
+  }
   const trimmed = content.trim();
 
   if (!trimmed) return [];
 
   if (absolutePath.endsWith('.json')) {
-    const parsed = JSON.parse(trimmed);
+    let parsed;
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch (error) {
+      throw new Error(`Cannot parse ${absolutePath} as JSON: ${error.message}`);
+    }
     const items = Array.isArray(parsed) ? parsed : parsed.prompts;
     if (!Array.isArray(items)) {
-      throw new Error('Prompt JSON must be an array or an object with a prompts array');
+      throw new Error(`${absolutePath} must be a JSON array of prompts or an object with a prompts array`);
     }
     return items.map((item, index) => normalizePromptItem(item, index));
   }
@@ -212,7 +224,13 @@ async function loadPromptFile(filePath) {
   if (absolutePath.endsWith('.jsonl')) {
     return trimmed.split(/\r?\n/)
       .filter(Boolean)
-      .map((line, index) => normalizePromptItem(JSON.parse(line), index));
+      .map((line, index) => {
+        try {
+          return normalizePromptItem(JSON.parse(line), index);
+        } catch (error) {
+          throw new Error(`Cannot parse line ${index + 1} of ${absolutePath} as JSON: ${error.message}`);
+        }
+      });
   }
 
   return trimmed.split(/\n\s*\n/g).map((prompt, index) => ({

@@ -1,5 +1,31 @@
 import { spawn } from 'node:child_process';
 
+// Children currently alive. The CLI registers signal handlers that terminate
+// these so Ctrl+C cannot leave `fm` processes behind.
+const activeChildren = new Set();
+
+export function activeChildCount() {
+  return activeChildren.size;
+}
+
+/**
+ * Terminate every running child process. Returns how many were signalled.
+ * @param {NodeJS.Signals} signal
+ */
+export function killActiveChildren(signal = 'SIGTERM') {
+  let killed = 0;
+  for (const child of activeChildren) {
+    if (child.exitCode != null || child.signalCode != null) continue;
+    try {
+      child.kill(signal);
+      killed += 1;
+    } catch {
+      // Process already gone.
+    }
+  }
+  return killed;
+}
+
 export function runProcess(command, args = [], options = {}) {
   const {
     input,
@@ -15,6 +41,7 @@ export function runProcess(command, args = [], options = {}) {
       env,
       stdio: ['pipe', 'pipe', 'pipe']
     });
+    activeChildren.add(child);
 
     let stdout = '';
     let stderr = '';
@@ -55,11 +82,16 @@ export function runProcess(command, args = [], options = {}) {
       stderr += chunk;
     });
 
-    child.on('error', (error) => {
+    const finish = (result) => {
+      if (settled) return;
       settled = true;
+      activeChildren.delete(child);
       if (timer) clearTimeout(timer);
-      const endedAt = process.hrtime.bigint();
-      resolve({
+      resolve(result);
+    };
+
+    child.on('error', (error) => {
+      finish({
         command,
         args,
         code: null,
@@ -73,15 +105,12 @@ export function runProcess(command, args = [], options = {}) {
         firstStderrMs,
         error,
         timedOut,
-        durationMs: Number(endedAt - startedAt) / 1e6
+        durationMs: Number(process.hrtime.bigint() - startedAt) / 1e6
       });
     });
 
     child.on('close', (code, signal) => {
-      settled = true;
-      if (timer) clearTimeout(timer);
-      const endedAt = process.hrtime.bigint();
-      resolve({
+      finish({
         command,
         args,
         code,
@@ -93,8 +122,9 @@ export function runProcess(command, args = [], options = {}) {
         stdoutChunkTimesMs,
         firstStdoutMs,
         firstStderrMs,
+        error: null,
         timedOut,
-        durationMs: Number(endedAt - startedAt) / 1e6
+        durationMs: Number(process.hrtime.bigint() - startedAt) / 1e6
       });
     });
 

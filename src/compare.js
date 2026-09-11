@@ -1,3 +1,4 @@
+import { stripAnsi } from './ansi.js';
 import { compareCompatibility } from './schema.js';
 import { formatMs, formatNumber, formatPercent } from './table.js';
 
@@ -266,12 +267,19 @@ function applyTone(text, tone) {
 }
 
 function pad(text, width) {
-  const len = String(text ?? '').length;
-  return String(text ?? '') + ' '.repeat(Math.max(0, width - len));
+  const str = safeCell(text);
+  const len = str.length;
+  return str + ' '.repeat(Math.max(0, width - len));
 }
 
 function fitCell(text, width) {
-  const str = String(text ?? '');
+  const str = safeCell(text);
   if (str.length <= width) return str + ' '.repeat(width - str.length);
   return `${str.slice(0, width - 1)}…`;
+}
+
+// Values can originate from report files that fm-bench did not write, so strip
+// ANSI escapes and control characters before they reach the terminal.
+function safeCell(text) {
+  return stripAnsi(String(text ?? '')).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '');
 }

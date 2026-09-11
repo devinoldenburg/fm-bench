@@ -100,3 +100,68 @@ test('runCli blocks benchmarks on non-macOS platforms', async () => {
 test('runCli keeps offline commands usable on unsupported macOS', async () => {
   await assert.doesNotReject(() => runCli(['legend', '--json'], { platform: 'darwin', swVers: swVers26 }));
 });
+
+test('parseArgs reports usage errors with exit code 2', () => {
+  for (const argv of [['--not-a-flag'], ['--profile', 'nope'], ['--runs', '0'], ['--width'], ['--format', 'yaml']]) {
+    assert.throws(
+      () => parseArgs(argv),
+      (error) => {
+        assert.equal(error.exitCode, 2, `expected exit code 2 for ${argv.join(' ')}`);
+        return true;
+      }
+    );
+  }
+});
+
+test('parseArgs accepts the documented model and prompt flags', () => {
+  const args = parseArgs(['--models', 'system', '--runs', '3', '--warmup', '1', '--timeout-ms', '5000', '--retry', '2']);
+  assert.deepEqual(args.models, ['system']);
+  assert.equal(args.runs, 3);
+  assert.equal(args.warmup, 1);
+  assert.equal(args.timeoutMs, 5000);
+  assert.equal(args.retry, 2);
+});
+
+test('--version prints only the package version', async () => {
+  const original = console.log;
+  const lines = [];
+  console.log = (line) => lines.push(line);
+  try {
+    await runCli(['--version'], { platform: 'darwin' });
+  } finally {
+    console.log = original;
+  }
+  assert.equal(lines.length, 1);
+  assert.match(lines[0], /^\d+\.\d+\.\d+$/);
+});
+
+test('--help documents exit codes and capability detection', async () => {
+  const original = console.log;
+  const lines = [];
+  console.log = (line) => lines.push(line);
+  try {
+    await runCli(['--help'], { platform: 'darwin' });
+  } finally {
+    console.log = original;
+  }
+  const text = lines.join('\n');
+  assert.match(text, /Exit codes:/);
+  assert.match(text, /usage or environment error/);
+  assert.match(text, /Capability detection:/);
+  assert.match(text, /unavailable instead of being/);
+  assert.match(text, /Alias for legend/);
+});
+
+test('legend --json is usable with no fm and no network', async () => {
+  const original = console.log;
+  const lines = [];
+  console.log = (line) => lines.push(line);
+  try {
+    await runCli(['legend', '--json'], { platform: 'darwin' });
+  } finally {
+    console.log = original;
+  }
+  const entries = JSON.parse(lines.join('\n'));
+  assert.ok(entries.length > 10);
+  assert.ok(entries.every((entry) => typeof entry.kind === 'string'));
+});

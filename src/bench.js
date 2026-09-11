@@ -1,51 +1,85 @@
 import crypto from 'node:crypto';
-import { checkModelAvailability, collectEnvironment, countTokens, discoverModels, getQuotaUsage, respond } from './fm.js';
+import { detectFmCapabilities } from './capabilities.js';
+import { checkModelAvailability, collectEnvironment, countTokens, getQuotaUsage, respond } from './fm.js';
+import { metricAvailability } from './metrics.js';
 import { loadPrompts } from './prompts.js';
 import { finalizeReportPayload } from './schema.js';
 import { summarizeByModel } from './stats.js';
 
 export async function inspectModels(options = {}) {
-  const discovered = await discoverModels(options);
+  const fmBin = options.fmBin || process.env.FM_BIN || 'fm';
+  const capabilities = options.capabilities ?? await detectFmCapabilities(fmBin, options);
+  const discovered = {
+    fmBin,
+    models: capabilities.models,
+    help: capabilities.help,
+    capabilities
+  };
   const requested = normalizeModelSelection(options.models);
   const models = requested.length > 0
-    ? discovered.models.filter((model) => requested.includes(model.name))
+    ? requested.map((name) => discovered.models.find((model) => model.name === name)
+      ?? { name, description: 'Requested model not reported by this fm build' })
     : discovered.models;
-
-  const missing = requested.filter((name) => !models.some((model) => model.name === name));
-  for (const name of missing) {
-    models.push({ name, description: 'Requested model not reported by fm --help' });
-  }
 
   const inspected = [];
   for (const model of models) {
-    const availability = await checkModelAvailability(discovered.fmBin, model.name, options);
-    const quota = await getQuotaUsage(discovered.fmBin, model.name, options);
+    const availability = await checkModelAvailability(discovered.fmBin, model.name, {
+      ...options,
+      capabilities
+    });
+    const quota = await getQuotaUsage(discovered.fmBin, model.name, {
+      ...options,
+      capabilities
+    });
     inspected.push({
       ...model,
       available: availability.available,
-      reason: availability.reason || availability.raw,
-      quota: quota.raw
+      unsupported: Boolean(availability.unsupported),
+      reason: availability.available ? '' : (availability.reason || availability.raw || 'unavailable'),
+      quota: quota.supported ? (quota.raw || quota.reason) : '',
+      quotaSupported: quota.supported,
+      quotaReason: quota.reason
     });
   }
 
   return {
     fmBin: discovered.fmBin,
     models: inspected,
-    help: discovered.help
+    help: discovered.help,
+    capabilities
   };
 }
 
 export async function runBenchmark(options = {}) {
   const startedAt = new Date().toISOString();
+  const fmBin = options.fmBin || process.env.FM_BIN || 'fm';
+
+  notify(options, { type: 'phase', phase: 'capabilities', message: 'probing fm capabilities' });
+  const capabilities = options.capabilities ?? await detectFmCapabilities(fmBin, options);
+  if (!capabilities.ok) {
+    const error = new Error(capabilities.error
+      ? `${capabilities.error}\nInstall Apple's fm CLI (macOS 27+) or point --fm-bin / FM_BIN at a compatible binary.`
+      : `No usable fm commands were found in ${fmBin} --help.`);
+    error.exitCode = 2;
+    throw error;
+  }
+
   notify(options, { type: 'phase', phase: 'prompts', message: 'loading prompts' });
   const prompts = await loadPrompts(options);
   notify(options, { type: 'phase', phase: 'models', message: 'discovering models' });
-  const inspection = await inspectModels(options);
+  const inspection = await inspectModels({ ...options, capabilities });
   const modelStatuses = options.availableOnly
     ? inspection.models.filter((model) => model.available)
     : inspection.models;
   const runnableModels = modelStatuses.filter((model) => model.available);
-  const environment = await collectEnvironment(inspection.fmBin);
+  if (runnableModels.length === 0) {
+    throw noRunnableModelsError(inspection.models, options);
+  }
+  const environment = await collectEnvironment(inspection.fmBin, { ...options, capabilities });
+  const metrics = metricAvailability(capabilities, {
+    stream: options.stream,
+    slo: Boolean(options.sloTtftMs || options.sloE2eMs || options.sloTpotMs)
+  });
   const promptTokenCounts = new Map();
   const concurrencies = normalizeConcurrencySweep(options);
   const totalRuns = concurrencies.length * runnableModels.length * prompts.length * options.runs;
@@ -53,10 +87,13 @@ export async function runBenchmark(options = {}) {
   notify(options, {
     type: 'tokens:start',
     total: prompts.length,
-    message: 'counting prompt tokens'
+    supported: metrics.promptTokens.available,
+    message: metrics.promptTokens.available ? 'counting prompt tokens' : 'token counting unavailable'
   });
   for (const prompt of prompts) {
-    const counted = await countTokens(inspection.fmBin, prompt.prompt, options);
+    const counted = metrics.promptTokens.available
+      ? await countTokens(inspection.fmBin, prompt.prompt, { ...options, capabilities })
+      : { ok: false, count: null };
     promptTokenCounts.set(prompt.id, counted.ok ? counted.count : null);
     notify(options, {
       type: 'tokens:progress',
@@ -80,10 +117,12 @@ export async function runBenchmark(options = {}) {
   for (const [scenarioIndex, concurrency] of concurrencies.entries()) {
     const scenario = await runScenario({
       fmBin: inspection.fmBin,
+      capabilities,
       prompts,
       runnableModels,
       modelStatuses,
       promptTokenCounts,
+      tokenCounting: metrics.outputTokens.available,
       options,
       concurrency,
       scenarioIndex: scenarioIndex + 1,
@@ -123,6 +162,15 @@ export async function runBenchmark(options = {}) {
     finishedAt: new Date().toISOString(),
     options: publicOptions(options),
     environment,
+    capabilities: {
+      bin: capabilities.bin,
+      digest: capabilities.digest,
+      commands: capabilities.commands,
+      models: capabilities.models,
+      features: capabilities.features,
+      warnings: capabilities.warnings
+    },
+    metrics,
     prompts: prompts.map((prompt) => ({
       id: prompt.id,
       prompt: prompt.prompt,
@@ -145,10 +193,12 @@ export async function runBenchmark(options = {}) {
 async function runScenario(context) {
   const {
     fmBin,
+    capabilities,
     prompts,
     runnableModels,
     modelStatuses,
     promptTokenCounts,
+    tokenCounting,
     options,
     concurrency,
     scenarioIndex,
@@ -172,6 +222,7 @@ async function runScenario(context) {
     for (const model of runnableModels) {
       await respond(fmBin, model.name, prompts[0].prompt, {
         ...options,
+        capabilities,
         stream: false
       });
       warmupCompleted += 1;
@@ -206,7 +257,15 @@ async function runScenario(context) {
     total: jobs.length
   });
   await runLimited(jobs, concurrency, async (job) => {
-    const result = await runSingleBenchmark(fmBin, job, promptTokenCounts, options, benchmarkStartedAt);
+    const result = await runSingleBenchmark({
+      fmBin,
+      capabilities,
+      job,
+      promptTokenCounts,
+      tokenCounting,
+      options,
+      benchmarkStartedAt
+    });
     results.push(result);
     if (onMeasuredResult) onMeasuredResult(result);
     if (!result.ok && options.failFast) {
@@ -229,13 +288,17 @@ async function runScenario(context) {
   };
 }
 
-async function runSingleBenchmark(fmBin, job, promptTokenCounts, options, benchmarkStartedAt) {
+async function runSingleBenchmark(context) {
+  const { fmBin, capabilities, job, promptTokenCounts, tokenCounting, options, benchmarkStartedAt } = context;
   const maxAttempts = 1 + Math.max(0, options.retry ?? 0);
   const startOffsetMs = Number(process.hrtime.bigint() - benchmarkStartedAt) / 1e6;
   let response;
+  let attempts = 0;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    attempts = attempt;
     response = await respond(fmBin, job.model.name, job.prompt.prompt, {
       ...options,
+      capabilities,
       stream: options.stream
     });
     if (response.ok || attempt >= maxAttempts) break;
@@ -243,28 +306,39 @@ async function runSingleBenchmark(fmBin, job, promptTokenCounts, options, benchm
     await new Promise((resolve) => setTimeout(resolve, backoffMs));
   }
   const endOffsetMs = Number(process.hrtime.bigint() - benchmarkStartedAt) / 1e6;
-  const outputTokens = response.ok
-    ? await countTokens(fmBin, response.output, options)
-    : { ok: false, count: null };
+
+  const ok = response.ok;
   const seconds = response.durationMs / 1000;
-  const firstTokenMs = response.firstOutputMs;
-  const generationMs = response.ok && firstTokenMs != null
+  const chunks = response.stdoutChunks ?? 0;
+
+  // A single stdout chunk carries the whole answer, so the streamed portion is
+  // not separable: report generation time and TPOT as unavailable rather than
+  // as a near-zero decode phase.
+  const firstTokenMs = ok ? response.firstOutputMs : null;
+  const generationMs = ok && firstTokenMs != null && chunks > 1
     ? Math.max(0, response.durationMs - firstTokenMs)
     : null;
+
+  const outputTokens = ok && tokenCounting
+    ? await countTokens(fmBin, response.output, { ...options, capabilities })
+    : { ok: false, count: null };
   const countedOutputTokens = outputTokens.ok ? outputTokens.count : null;
-  const decodeTokenCount = countedOutputTokens != null ? Math.max(0, countedOutputTokens - 1) : null;
-  const hasDecodeCadence = response.stdoutChunks > 2 && generationMs != null && generationMs > 0 && decodeTokenCount > 0;
-  const tpotMs = hasDecodeCadence ? generationMs / decodeTokenCount : null;
-  const decodeTokensPerSecond = hasDecodeCadence
-    ? decodeTokenCount / (generationMs / 1000)
+  // Two decode tokens is the minimum for an inter-token interval that is not
+  // simply the inverse of a single chunk gap.
+  const decodeTokenCount = countedOutputTokens != null && countedOutputTokens > 2
+    ? countedOutputTokens - 1
     : null;
+  const hasDecodeCadence = generationMs != null && generationMs > 0 && decodeTokenCount != null;
+  const tpotMs = hasDecodeCadence ? generationMs / decodeTokenCount : null;
+  const decodeTokensPerSecond = hasDecodeCadence ? decodeTokenCount / (generationMs / 1000) : null;
+
   const chars = response.output.length;
   const words = response.output.trim() ? response.output.trim().split(/\s+/).length : 0;
-  const promptTokens = promptTokenCounts.get(job.prompt.id);
-  const prefillTokensPerSecond = promptTokens != null && firstTokenMs > 0
+  const promptTokens = promptTokenCounts.get(job.prompt.id) ?? null;
+  const prefillTokensPerSecond = promptTokens != null && firstTokenMs != null && firstTokenMs > 0
     ? promptTokens / (firstTokenMs / 1000)
     : null;
-  const chunkGapsMs = chunkGaps(response.stdoutChunkTimesMs);
+  const chunkGapsMs = ok ? chunkGaps(response.stdoutChunkTimesMs) : [];
   const secondChunkMs = chunkGapsMs.length > 0 ? chunkGapsMs[0] : null;
 
   return {
@@ -272,7 +346,8 @@ async function runSingleBenchmark(fmBin, job, promptTokenCounts, options, benchm
     concurrency: job.concurrency,
     promptId: job.prompt.id,
     run: job.run,
-    ok: response.ok,
+    attempts,
+    ok,
     durationMs: response.durationMs,
     firstTokenMs,
     generationMs,
@@ -284,7 +359,7 @@ async function runSingleBenchmark(fmBin, job, promptTokenCounts, options, benchm
     tokensPerSecond: countedOutputTokens != null && seconds > 0 ? countedOutputTokens / seconds : null,
     decodeTokensPerSecond,
     prefillTokensPerSecond,
-    charsPerSecond: seconds > 0 ? chars / seconds : 0,
+    charsPerSecond: seconds > 0 ? chars / seconds : null,
     startOffsetMs,
     endOffsetMs,
     streamed: response.streamed,
@@ -293,14 +368,14 @@ async function runSingleBenchmark(fmBin, job, promptTokenCounts, options, benchm
     chunkGapsMs,
     chunkGapAvgMs: average(chunkGapsMs),
     chunkGapMaxMs: chunkGapsMs.length > 0 ? Math.max(...chunkGapsMs) : null,
-    outputHash: response.ok ? hashOutput(response.output) : null,
-    good: response.ok ? evaluateSlo({
+    outputHash: ok ? hashOutput(response.output) : null,
+    good: ok ? evaluateSlo({
       firstTokenMs,
       durationMs: response.durationMs,
       tpotMs
     }, options) : false,
     output: options.captureOutput ? response.output : undefined,
-    error: response.ok ? '' : response.stderr || `fm exited with code ${response.code ?? response.signal}`
+    error: ok ? '' : (response.error || `fm exited with code ${response.code ?? response.signal}`)
   };
 }
 
@@ -316,6 +391,23 @@ async function runLimited(items, concurrency, worker, options = {}) {
     }
   });
   await Promise.all(workers);
+}
+
+// A benchmark with nothing to run is a configuration error, not an empty
+// report: say which models were asked for and which ones the build supports.
+function noRunnableModelsError(models, options) {
+  const requested = normalizeModelSelection(options.models);
+  const supported = models.filter((model) => !model.unsupported).map((model) => model.name);
+  const lines = ['No benchmark was run: none of the requested models are usable right now.'];
+  if (requested.length > 0) lines.push(`  requested: ${requested.join(', ')}`);
+  if (supported.length > 0) lines.push(`  models reported by this fm build: ${supported.join(', ')}`);
+  for (const model of models) {
+    if (model.reason) lines.push(`  ${model.name}: ${model.reason}`);
+  }
+  lines.push('  run "fm-bench models" to see availability and reasons');
+  const error = new Error(lines.join('\n'));
+  error.exitCode = 2;
+  return error;
 }
 
 function normalizeModelSelection(models) {

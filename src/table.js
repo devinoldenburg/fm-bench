@@ -1,4 +1,5 @@
 import { stripAnsi } from './ansi.js';
+import { formatCapabilitySummary } from './metrics.js';
 
 export function renderTable(headers, rows, options = {}) {
   const ascii = Boolean(options.ascii);
@@ -52,10 +53,19 @@ export function renderBenchmarkReport(payload, options = {}) {
   const meta = `prompts ${payload.prompts.length} | runs ${payload.options.runs} | concurrency ${concurrencies} | stream ${payload.options.stream ? 'on' : 'off'} | measured ${measured} | failed ${failed} | skipped ${skipped} | elapsed ${formatMs(elapsedMs)}${slo ? ` | ${slo}` : ''}`;
   const tags = payload.options?.tags?.length ? payload.options.tags : [];
   const note = payload.options?.note ?? null;
-  lines.push(truncate(title, width));
-  lines.push(truncate(meta, width));
-  if (tags.length > 0) lines.push(truncate(`tags: ${tags.join(', ')}`, width));
-  if (note) lines.push(truncate(`note: ${note}`, width));
+  lines.push(...wrapText(title, width));
+  lines.push(...wrapText(meta, width));
+  if (tags.length > 0) {
+    for (const line of wrapText(`tags: ${tags.join(', ')}`, width)) lines.push(line);
+  }
+  if (note) {
+    for (const line of wrapText(`note: ${note}`, width)) lines.push(line);
+  }
+  for (const metricNote of unavailableMetricNotes(payload.metrics)) {
+    for (const line of wrapText(`unavailable: ${metricNote}`, width)) {
+      lines.push(line);
+    }
+  }
   lines.push('');
 
   if (mode === 'compact') {
@@ -71,41 +81,43 @@ export function renderBenchmarkReport(payload, options = {}) {
 
 export function legendEntries() {
   return [
-    entry('summary', 'C', 'Concurrency operating point for this row.', 'Higher C means more parallel fm respond processes.'),
-    entry('summary', 'MODEL', 'fm model name, such as system or pcc.', ''),
-    entry('summary', 'STATUS', 'Run status for this model and operating point.', 'ok = all measured jobs passed; partial = at least one failed; skipped = unavailable.'),
-    entry('summary', 'OK / OK/RUNS', 'Successful measured runs over attempted measured runs.', 'Green when no failures; yellow when partial.'),
-    entry('summary', 'SUCC / SUCCESS', 'Success rate: successful runs divided by attempted runs.', 'Green 100%, yellow >=95%, red <95%.'),
-    entry('summary', 'GOOD', 'Goodput rate: successful runs that also met every configured SLO.', 'Only appears when SLO flags are set. Green 100%, yellow >=80%, red <80%.'),
-    entry('summary', 'GOOD RPS', 'SLO-passing requests per second during this measured window.', 'Zero is shown when SLOs are set and no request meets them.'),
-    entry('summary', 'TTFT', 'Time to first streamed output chunk, p50.', 'Lower is better. Uses SLO threshold when set; otherwise relative ranking.'),
-    entry('summary', 'TTFT P95', '95th percentile time to first streamed output chunk.', 'Lower is better.'),
-    entry('summary', 'E2E', 'End-to-end latency, p50, from starting fm respond until full response exits.', 'Lower is better.'),
-    entry('summary', 'E2E P95', '95th percentile end-to-end latency.', 'Lower is better; this is usually the main interactive tail-latency signal.'),
-    entry('summary', 'TPOT', 'Time per output token after the first output token, p50.', 'Lower is better. Requires streaming and token counts.'),
-    entry('summary', 'TPOT P95', '95th percentile time per output token after first token.', 'Lower is better.'),
-    entry('summary', 'USER/S / USER T/S', 'Per-request output tokens per second.', 'Higher is better; relative ranking.'),
-    entry('summary', 'SYS/S / SYS T/S', 'Aggregate successful output-token throughput for the model row.', 'Higher is better; relative ranking.'),
-    entry('summary', 'RPS', 'Successful requests per second over the model row measured window.', 'Higher is better; relative ranking.'),
-    entry('summary', 'CV', 'Coefficient of variation for E2E latency: sample stddev divided by mean.', 'Lower is steadier. Green <=10%, yellow <=25%, red >25%.'),
-    entry('summary', 'NOTE', 'Short unavailable, skipped, or error note.', ''),
-    entry('detail', 'IN AVG / IN TOK AVG', 'Average prompt/input token count from fm token-count.', ''),
-    entry('detail', 'OUT AVG / OUT TOK AVG', 'Average output token count from fm token-count.', ''),
-    entry('detail', 'PREFILL/S / PREFILL TOK/S', 'Prompt tokens divided by TTFT seconds.', 'Higher is better; estimates prompt-processing speed for streaming runs.'),
-    entry('detail', 'DECODE/S / DECODE TOK/S', 'Output tokens after the first token divided by generation seconds.', 'Higher is better; requires streaming and token counts.'),
-    entry('detail', '2ND CHUNK', 'Delay between the first and second streamed stdout chunks, p50.', 'Lower is smoother startup. Chunk-based, not raw token telemetry.'),
-    entry('detail', 'CHUNK P95', '95th percentile gap between consecutive streamed stdout chunks.', 'Lower is smoother streaming.'),
-    entry('detail', 'E2E P99', '99th percentile end-to-end latency.', 'Lower is better; useful for worst-case UX.'),
-    entry('detail', 'E2E 95% CI', '95% confidence interval around mean E2E latency.', 'Narrower usually means a steadier estimate. Treat small samples carefully.'),
-    entry('detail', 'REPEAT', 'Share of repeated runs for a prompt that produced the most common normalized output hash.', 'Green 90%+, yellow 50%+, red below 50%. Blank when there are not repeated comparable outputs.'),
-    entry('detail', 'DESCRIPTION', 'Model description discovered from fm help.', ''),
-    entry('models', 'AVAILABLE', 'Whether fm available reports the model as usable on this machine right now.', ''),
-    entry('models', 'QUOTA', 'Raw fm quota-usage output or unavailable reason.', 'Mostly relevant for Private Cloud Compute.'),
-    entry('compact', 'GOOD / CV / TPOT / CHUNK', 'Compact output combines the same summary and detail metrics into model cards.', 'Same definitions and color rules as table columns.'),
-    entry('colors', 'GREEN', 'Passing, steadier, faster, or better within this benchmark context.', ''),
-    entry('colors', 'YELLOW', 'Marginal, partial, near a budget, or middle-ranked within this benchmark context.', ''),
-    entry('colors', 'RED', 'Failed budget, unstable, slower, lower, or worse within this benchmark context.', ''),
-    entry('colors', 'MUTED', 'Unavailable model, skipped value, or descriptive text.', '')
+    entry('summary', 'C', 'Concurrency operating point for this row.', 'Higher C means more parallel fm respond processes.', 'controlled'),
+    entry('summary', 'MODEL', 'fm model name reported by the detected fm build.', '', 'measured'),
+    entry('summary', 'STATUS', 'Run status for this model and operating point.', 'ok = all measured jobs passed; partial = at least one failed; skipped = unavailable or unsupported.', 'measured'),
+    entry('summary', 'OK / OK/RUNS', 'Successful measured runs over attempted measured runs.', 'Green when no failures; yellow when partial.', 'measured'),
+    entry('summary', 'SUCC / SUCCESS', 'Success rate: successful runs divided by attempted runs.', 'Green 100%, yellow >=95%, red <95%.', 'measured'),
+    entry('summary', 'GOOD', 'Goodput rate: successful runs that also met every configured SLO.', 'Only appears when SLO flags are set. Runs whose SLO metric is unmeasurable count as not good.', 'derived'),
+    entry('summary', 'GOOD RPS', 'SLO-passing requests per second during this measured window.', 'Zero is shown when SLOs are set and no request meets them.', 'derived'),
+    entry('summary', 'TTFT', 'Time from starting fm respond to the first streamed stdout chunk, p50.', 'Proxy for time to first token: measured at chunk granularity, not per token. Lower is better.', 'proxy'),
+    entry('summary', 'TTFT P95', '95th percentile time to the first streamed stdout chunk.', 'Lower is better.', 'proxy'),
+    entry('summary', 'E2E', 'End-to-end latency, p50, from starting fm respond until full response exits.', 'Lower is better. This is a direct wall-clock measurement.', 'measured'),
+    entry('summary', 'E2E P95', '95th percentile end-to-end latency.', 'Lower is better; this is usually the main interactive tail-latency signal.', 'measured'),
+    entry('summary', 'TPOT', 'Time per output token after the first output token, p50.', 'Derived from fm token counts and stream timings. Lower is better.', 'derived'),
+    entry('summary', 'TPOT P95', '95th percentile time per output token after first token.', 'Lower is better.', 'derived'),
+    entry('summary', 'USER/S / USER T/S', 'Per-request output tokens per second.', 'Derived from fm token counts. Higher is better.', 'derived'),
+    entry('summary', 'SYS/S / SYS T/S', 'Aggregate successful output-token throughput for the model row.', 'Higher is better.', 'derived'),
+    entry('summary', 'RPS', 'Successful requests per second over the model row measured window.', 'Measured from process timings. Higher is better.', 'measured'),
+    entry('summary', 'CV', 'Coefficient of variation for E2E latency: sample stddev divided by mean.', 'Lower is steadier. Green <=10%, yellow <=25%, red >25%.', 'derived'),
+    entry('summary', 'NOTE', 'Short unavailable, skipped, or error note.', '', 'measured'),
+    entry('detail', 'IN AVG / IN TOK AVG', 'Average prompt/input token count from fm count-tokens.', 'Blank when the fm build cannot count tokens.', 'measured'),
+    entry('detail', 'OUT AVG / OUT TOK AVG', 'Average output token count from fm count-tokens.', 'Blank when the fm build cannot count tokens.', 'measured'),
+    entry('detail', 'PREFILL/S / PREFILL TOK/S', 'Prompt tokens divided by TTFT seconds.', 'Proxy: prefill is inferred from time to first chunk, not observed directly. Higher is better.', 'proxy'),
+    entry('detail', 'DECODE/S / DECODE TOK/S', 'Output tokens after the first token divided by generation seconds.', 'Derived; requires streaming and token counts. Higher is better.', 'derived'),
+    entry('detail', '2ND CHUNK', 'Delay between the first and second streamed stdout chunks, p50.', 'Lower is smoother startup. Chunk-based, not raw token telemetry.', 'proxy'),
+    entry('detail', 'CHUNK P95', '95th percentile gap between consecutive streamed stdout chunks.', 'Proxy for decode smoothness at chunk granularity. Lower is smoother.', 'proxy'),
+    entry('detail', 'E2E P99', '99th percentile end-to-end latency.', 'Lower is better; useful for worst-case UX.', 'measured'),
+    entry('detail', 'E2E 95% CI', '95% confidence interval around mean E2E latency.', 'Blank with fewer than two successful samples; treat small samples carefully.', 'derived'),
+    entry('detail', 'REPEAT', 'Share of repeated runs for a prompt that produced the most common normalized output hash.', 'Green 90%+, yellow 50%+, red below 50%. Blank when there are not repeated comparable outputs.', 'derived'),
+    entry('detail', 'ATTEMPTS', 'Total fm invocations including retries.', 'Shown in reports; a retried run is still one measured result.', 'measured'),
+    entry('detail', 'DESCRIPTION', 'Model description discovered from fm help.', '', 'measured'),
+    entry('models', 'AVAILABLE', 'Whether fm available reports the model as usable on this machine right now.', '', 'measured'),
+    entry('models', 'QUOTA', 'Quota information when the fm build exposes a quota command.', 'Column is omitted entirely when the installed fm has no quota command.', 'measured'),
+    entry('metrics', 'SOURCE', 'How a metric is obtained: measured, proxy, derived, or controlled.', 'measured = observed directly; proxy = observed at coarser granularity; derived = computed from measured values.', 'measured'),
+    entry('compact', 'GOOD / CV / TPOT / CHUNK', 'Compact output combines the same summary and detail metrics into model cards.', 'Same definitions and color rules as table columns.', 'derived'),
+    entry('colors', 'GREEN', 'Passing, steadier, faster, or better within this benchmark context.', '', 'controlled'),
+    entry('colors', 'YELLOW', 'Marginal, partial, near a budget, or middle-ranked within this benchmark context.', '', 'controlled'),
+    entry('colors', 'RED', 'Failed budget, unstable, slower, lower, or worse within this benchmark context.', '', 'controlled'),
+    entry('colors', 'MUTED', 'Unavailable model, skipped value, or descriptive text.', '', 'controlled')
   ];
 }
 
@@ -114,6 +126,7 @@ export function renderLegend(options = {}) {
   const rows = legendEntries().map((item) => [
     item.table,
     item.column,
+    item.kind || 'measured',
     item.definition,
     item.rule || '-'
   ]);
@@ -122,7 +135,7 @@ export function renderLegend(options = {}) {
     return renderCompactLegend(width);
   }
 
-  return renderWrappedTable(['table', 'column', 'definition', 'rule'], rows, legendColumnWidths(width), options);
+  return renderWrappedTable(['table', 'column', 'source', 'definition', 'rule'], rows, legendColumnWidths(width), options);
 }
 
 export function renderLatencyHistogram(results, options = {}) {
@@ -335,12 +348,46 @@ export function renderModelsTable(models, options = {}) {
     }).join('\n');
   }
 
+  const quotaSupported = options.capabilities
+    ? Boolean(options.capabilities.features?.quota)
+    : models.some((model) => model.quotaSupported === true || (model.quota != null && model.quota !== ''));
+
+  if (!quotaSupported) {
+    return renderTable(['model', 'available', 'description', 'notes'], models.map((model) => [
+      cell(model.name),
+      cell(model.available ? 'yes' : 'no', model.available ? 'green' : 'yellow'),
+      model.description || '-',
+      cleanReason(model.reason || '-')
+    ]), { ...options, wrapColumns: ['description', 'notes'] });
+  }
+
   return renderTable(['model', 'available', 'description', 'quota'], models.map((model) => [
     cell(model.name),
     cell(model.available ? 'yes' : 'no', model.available ? 'green' : 'yellow'),
     model.description || '-',
     cleanReason(model.quota || model.reason || '-')
   ]), { ...options, wrapColumns: ['description', 'quota'] });
+}
+
+/**
+ * `fm-bench models` body: fm capability summary, then the model table.
+ * Unsupported capabilities are stated up front so a missing quota column or
+ * blank metric never looks like a bug.
+ */
+export function renderModelsReport(models, options = {}) {
+  const capabilities = options.capabilities;
+  const lines = [];
+  if (capabilities) {
+    lines.push(`fm        ${capabilities.bin}${capabilities.digest ? `  help ${capabilities.digest}` : ''}${capabilities.ok ? '' : '  (no commands detected)'}`);
+    lines.push(`commands  ${capabilities.commands.join(', ') || 'none detected'}`);
+    lines.push(`features  ${formatCapabilitySummary(capabilities)}`);
+    for (const warning of capabilities.warnings) {
+      lines.push(`warn      ${warning}`);
+    }
+    lines.push('');
+  }
+  lines.push(renderModelsTable(models, options));
+  return lines.join('\n');
 }
 
 function formatRangeMs(low, high) {
@@ -364,13 +411,36 @@ function formatSlo(slo = {}) {
   return parts.length ? `SLO ${parts.join(',')}` : '';
 }
 
-function entry(table, column, definition, rule) {
+function entry(table, column, definition, rule, kind = 'measured') {
   return {
     table,
     column,
     definition,
-    rule
+    rule,
+    kind
   };
+}
+
+/**
+ * Reasons why metric columns are blank. Keeps "unavailable" visible in table
+ * output instead of leaving readers to guess why a column is empty.
+ */
+function unavailableMetricNotes(metrics) {
+  if (!metrics) return [];
+  const notes = [];
+  const tokenMetric = metrics.promptTokens;
+  if (tokenMetric && !tokenMetric.available) {
+    notes.push(`${tokenMetric.label} unavailable — ${tokenMetric.unavailableReason}`);
+  }
+  const ttft = metrics.ttft;
+  if (ttft && !ttft.available) {
+    notes.push(`${ttft.label} unavailable — ${ttft.unavailableReason}`);
+  }
+  const quota = metrics.quota;
+  if (quota && !quota.available) {
+    notes.push(`${quota.label} unavailable — ${quota.unavailableReason}`);
+  }
+  return notes;
 }
 
 const ASCII_TABLE = {
@@ -516,7 +586,10 @@ function normalizeCell(value) {
 
 function formatCell(value) {
   if (value == null) return '';
-  return String(value);
+  // Terminal output carries prompt text, captured model output, and fm
+  // diagnostics. Strip ANSI escapes and control characters so they cannot
+  // corrupt the table layout or emit terminal control sequences.
+  return stripAnsi(String(value)).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '');
 }
 
 function pad(value, width, left = false) {
@@ -546,7 +619,7 @@ function compactReason(value) {
 function renderCompactLegend(width) {
   const lines = [];
   for (const item of legendEntries()) {
-    lines.push(...wrapText(`${item.table.toUpperCase()} ${item.column}`, width));
+    lines.push(...wrapText(`${item.table.toUpperCase()} ${item.column} (${item.kind || 'measured'})`, width));
     lines.push(...wrapText(`  Definition: ${item.definition}`, width));
     if (item.rule) {
       lines.push(...wrapText(`  Rule: ${item.rule}`, width));
@@ -558,13 +631,14 @@ function renderCompactLegend(width) {
 }
 
 function legendColumnWidths(width) {
-  const available = Math.max(40, width - 13);
+  const available = Math.max(40, width - 16);
   const tableWidth = 7;
-  const columnWidth = Math.min(25, Math.max(18, Math.floor(available * 0.28)));
-  const remaining = Math.max(36, available - tableWidth - columnWidth);
-  const definitionWidth = Math.max(18, Math.floor(remaining * 0.52));
-  const ruleWidth = Math.max(18, remaining - definitionWidth);
-  return [tableWidth, columnWidth, definitionWidth, ruleWidth];
+  const columnWidth = Math.min(25, Math.max(18, Math.floor(available * 0.22)));
+  const sourceWidth = 11;
+  const remaining = Math.max(32, available - tableWidth - columnWidth - sourceWidth);
+  const definitionWidth = Math.max(18, Math.floor(remaining * 0.58));
+  const ruleWidth = Math.max(14, remaining - definitionWidth);
+  return [tableWidth, columnWidth, sourceWidth, definitionWidth, ruleWidth];
 }
 
 function wrapText(value, width) {
