@@ -1,17 +1,35 @@
 # AGENTS.md
 
-## Cursor Cloud specific instructions
+## Working on fm-bench
 
-`fm-bench` is a single Node.js CLI (ESM, `bin/fm-bench.js` → `src/`). It has **no runtime npm dependencies**, so `npm install` is effectively a no-op beyond Node itself. Node 20+ is required (the VM has Node 22). Standard commands are documented in `README.md` ("Development") and `package.json` `scripts`:
+`fm-bench` is a single Node.js CLI (ESM, `bin/fm-bench.js` → `src/`). It has **no runtime npm dependencies**, so `npm install` is effectively a no-op beyond Node itself. Node 20+ is required.
 
-- Test: `npm test` (`node --test`)
-- Lint: `npm run lint` (`node --check` on every `.js`)
-- Run: `node bin/fm-bench.js <command>` (run directly; `npm link` fails on this VM due to a read-only global prefix — use the direct path instead)
+Standard commands:
 
-### Running the benchmark off macOS (key gotcha)
+- Test: `npm test` (`node --test test/*.test.js`)
+- Lint: `npm run lint` (`node --check` on every `.js`/`.mjs`)
+- Everything: `npm run check` (lint + tests + `npm pack` integrity)
+- Run: `node bin/fm-bench.js <command>` (use the direct path; `npm link` can fail when the global prefix is read-only)
 
-The product benchmarks Apple's `fm` CLI, which only exists on macOS 27+ with Apple Intelligence. On the Linux cloud VM `fm` is absent, so `doctor`/`models`/the default benchmark fail with `spawn fm ENOENT`.
+CI runs `npm run check` on Node 20 and 24, plus CLI smoke tests.
 
-The CLI reads the `fm` binary from the `FM_BIN` env var (or `--fm-bin <path>`). To exercise the full benchmark/report pipeline end-to-end here, point `FM_BIN` at a stub that emulates the subcommands `fm-bench` calls: `--help` (must print `Apple Foundation Models CLI` and/or a `MODELS` section), `available --model <m>`, `quota-usage --model <m>`, `token-count --quiet` (reads stdin, prints a token count), and `respond --model <m>` (reads the prompt on stdin, streams the answer to stdout). Example: `FM_BIN=/path/to/mock-fm node bin/fm-bench.js --models system --runs 2 --profile quick`.
+## Architecture notes
 
-These commands need **no** `fm` and work as-is: `legend`, `validate <report.json>`, `export <report.json>`, `compare <a.json> <b.json>`, `history <dir>`.
+- `src/capabilities.js` — probes `fm --help` / `fm respond --help` and reports what the installed build supports. All subcommand and flag decisions come from here; do not hardcode `fm` subcommand names elsewhere.
+- `src/fm-help.js` — pure parsers for `fm` help/status text (unit tested against captured real output in `test/fixtures/`).
+- `src/metrics.js` — metric provenance catalogue (`measured` / `proxy` / `derived` / `controlled`) and per-run availability.
+- `src/process.js` — the only place that spawns processes; tracks live children so signals can clean up.
+- `src/bench.js` — orchestration; must not render or print.
+- `src/stats.js` — pure statistics; spread metrics are `null` below two samples.
+
+## Running the benchmark without a real `fm`
+
+The product benchmarks Apple's `fm` CLI, which only exists on macOS 27+ with Apple Intelligence. The CLI reads the binary from `--fm-bin <path>` or the `FM_BIN` environment variable, so the full pipeline can be exercised anywhere with the fake CLI:
+
+```sh
+FM_BIN=$PWD/test/fixtures/fake-fm.mjs FAKE_FM_SCENARIO=normal node bin/fm-bench.js --profile quick --runs 2
+```
+
+`FAKE_FM_SCENARIO` selects behaviour: `normal`, `slow`, `malformed`, `fail`, `timeout`, `interrupt`, `partial`, `unavailable`, `unavailable-model`, `quota`, `multi-model`, `no-token-count`, `legacy-token-count`, `no-streaming`, `no-model-flag`, `token-count-fails`, `help-garbage`, `error-help`.
+
+Commands that need no `fm` at all: `legend`, `validate <report.json>`, `export <report.json>`, `compare <a.json> <b.json>`, `history <dir>`, `--help`, `--version`.

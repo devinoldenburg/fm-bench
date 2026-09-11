@@ -8,8 +8,6 @@
 - **Node.js 20 or newer**.
 - **Apple Intelligence enabled** on the device.
 
-`pcc` (Private Cloud Compute) availability additionally depends on Apple's current eligibility. `fm-bench` reports it as skipped when `fm available --model pcc` reports unavailable.
-
 ## Version enforcement
 
 Commands that launch `fm` benchmarks — the default `run` command and `models` — check the macOS version first and refuse to start on anything older than macOS 27:
@@ -24,3 +22,20 @@ The process exits with code `2`. This is deliberate: running on an unsupported m
 Commands that only read local report files — `compare`, `history`, `validate`, `export`, and `legend` — are not gated and work anywhere Node.js runs.
 
 `fm-bench doctor` still runs on unsupported hosts so you can diagnose the environment: it prints the detected macOS version, an explicit `macOS support` line, and the latest supported version.
+
+## Which `fm` builds work
+
+Support is capability-based rather than version-pinned. The CLI probes the installed `fm` and reports what it can measure; a build that exposes different subcommand names or fewer flags still works, with the unsupported metrics reported as unavailable. See [compatibility.md](./compatibility.md) for the detection policy and the verified build table.
+
+## Models
+
+`fm-bench` benchmarks exactly the models the installed `fm` reports — it does not assume that any particular cloud or adapter model exists. On the verified macOS 27.0 build that is the on-device `system` model only. If a build adds models (for example a Private Cloud Compute model), they are discovered automatically and reported with their own availability.
+
+Requesting only models the build cannot run exits with code `2` before any benchmark starts, and `fm-bench models` shows the same reasons without failing:
+
+```text
+fm-bench: No benchmark was run: none of the requested models are usable right now.
+  requested: pcc
+  pcc: not supported by this fm build (supported: system)
+  run "fm-bench models" to see availability and reasons
+```

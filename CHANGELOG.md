@@ -1,5 +1,58 @@
 # Changelog
 
+## 0.7.0
+
+Correctness release: `fm-bench` now probes the installed `fm` for its real capabilities, measures what that build can actually supply, and reports everything else as explicitly unavailable.
+
+### Benchmark correctness
+
+- **Token counting was broken on current macOS 27 builds.** `fm` exposes `count-tokens`, but 0.6.3 called `token-count`, so prompt tokens, output tokens, TPOT, decode tokens/s, prefill tokens/s, per-request tokens/s, and aggregate token throughput were all blank. The subcommand is now detected (`count-tokens`, with legacy `token-count` as a fallback).
+- **No fabricated precision.** `CV`, `stddev`, and the 95% confidence interval are unavailable with fewer than two successful samples instead of reporting `0` / a zero-width interval. `generation_ms` and `TPOT` are unavailable when the whole answer arrives in one stdout chunk, because prefill and decode are not separable, and the decode rate is withheld when an answer has fewer than three output tokens so a single chunk gap cannot masquerade as a token rate. Failed and timed-out runs no longer carry derived metrics.
+- **Failed calls are represented honestly.** Each result records `attempts` (including retries) and the first actionable line of `fm` stderr, and retried successes stay a single sample.
+- Report `results` and `summary` rows now carry only measured values; a metric the build cannot supply is `null`, and renders as `-`.
+
+### `fm` compatibility
+
+- New capability-detection boundary (`src/capabilities.js`): probes `fm --help` and `fm respond --help` once per run and derives the command list, models, and feature flags, tolerating `--[no-]flag` spellings and ANSI output.
+- `models` no longer runs the non-existent `quota-usage` subcommand, so `Error: Unknown command 'quota-usage'` can no longer appear in tables or reports. Quota is reported as unavailable when the build has no quota command.
+- Models the build does not expose are rejected before a benchmark starts (`not supported by this fm build (supported: system)`), and raw `fm` argument-error/usage text never reaches user-facing output.
+- A benchmark with no usable model now fails fast with exit code `2` and an actionable message instead of printing an empty report.
+- Flags the build does not document (`--stream`, `--use-case`, `--guardrails`, `--instructions`, `--greedy`, `--model`) are no longer passed through blindly.
+- New [docs/compatibility.md](docs/compatibility.md) documents the detection and capability policy plus the verified build.
+
+### Report schema (still v1)
+
+- Reports gain a `capabilities` block (commands, models, feature flags, help digest, warnings) and a `metrics` block describing each metric's provenance — `measured`, `proxy`, `derived`, or `controlled` — and availability with a reason. Both are additive; 0.6.x reports remain valid and readable.
+- CSV per-run rows gain an `attempts` column.
+
+### CLI and output
+
+- Exit codes are now consistent: `1` for operational failures (`--ci` gate, invalid reports, `fm` errors), `2` for usage and environment errors (unknown flags, missing arguments, unsupported macOS, unusable `fm`, no runnable model). Previously usage errors exited `1`.
+- `fm-bench models` prints a capability summary (`fm`, commands, features, warnings) above the table, and omits the quota column when the build has no quota command.
+- `fm-bench doctor` reports the `fm` help digest, command list, token counting, streaming, and quota support, and supports `--json`. `validate --json` prints `{ ok, files }` for CI.
+- `fm-bench legend` now shows metric provenance in a SOURCE column, and table output names unavailable metrics instead of leaving blank columns.
+- Ctrl+C and SIGTERM terminate in-flight `fm` child processes before exiting (`130` / `143`).
+- Report headers and `--tag`/`--note` lines wrap instead of being truncated with an ellipsis.
+- Machine formats stay clean: `--json` / `--csv` write only data to stdout, including with `--progress`.
+
+### Robustness and security
+
+- Malformed `fm` output (invalid UTF-8, control bytes) no longer risks crashing a run.
+- Table, compare, and history output strips ANSI escapes and control characters from report and `fm` text before printing.
+- CSV cells that begin with `=`, `+`, `@`, or a non-numeric `-` are prefixed with a single quote so spreadsheets do not execute prompts or model output as formulas.
+- Prompt-file parse errors name the file (and JSONL line) instead of surfacing a bare JSON error.
+
+### Tests, CI, and packaging
+
+- Test suite grew from 58 to 149 tests: statistics edge cases (n=0, n=1, n=2, unsorted input, known CI values), capability parsing against the captured macOS 27 help output, `fm` compatibility parsing, report normalization and CSV escaping, HTML escaping, comparison handling, and a fake-`fm` integration suite covering normal, streaming, slow, malformed, failing, timed-out, unavailable-model, quota, partial-stream, and interrupted-process behaviour.
+- `npm run check` runs lint, the full suite, and package-content verification; `prepack` is wired to it.
+- CI runs on Node 20 and 24, runs `npm run check`, and adds CLI smoke tests.
+- The Release workflow no longer fails the whole release when `NPM_TOKEN` is absent: it warns, skips npm publish, and still creates the GitHub release.
+
+### Verified
+
+- macOS 27.0 build `26A5425a`, Apple M5 Pro (Mac17,9), Node v24.16.0, with the installed `/usr/bin/fm` (`available`, `chat`, `count-tokens`, `license`, `respond`, `schema`, `serve`; model `system`): `doctor`, `models`, real benchmark runs, `validate`, `export`, `compare`, `history`, and `legend` all pass, with token counts, TPOT, decode and prefill throughput measured from the real binary.
+
 ## 0.6.3
 
 - **macOS version gate**: `run` and `models` refuse to start on macOS older than 27.0 (or on non-macOS hosts), exiting with code 2 and naming both the detected version and the latest supported macOS (`27.0+`).
