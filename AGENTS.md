@@ -30,6 +30,6 @@ The product benchmarks Apple's `fm` CLI, which only exists on macOS 27+ with App
 FM_BIN=$PWD/test/fixtures/fake-fm.mjs FAKE_FM_SCENARIO=normal node bin/fm-bench.js --profile quick --runs 2
 ```
 
-`FAKE_FM_SCENARIO` selects behaviour: `normal`, `slow`, `malformed`, `fail`, `timeout`, `interrupt`, `partial`, `unavailable`, `unavailable-model`, `quota`, `multi-model`, `no-token-count`, `legacy-token-count`, `no-streaming`, `no-model-flag`, `token-count-fails`, `help-garbage`, `error-help`.
+`FAKE_FM_SCENARIO` selects behaviour: `normal`, `slow`, `malformed`, `fail`, `timeout`, `interrupt`, `partial`, `short-answer`, `unavailable`, `unavailable-model`, `quota`, `multi-model`, `no-token-count`, `legacy-token-count`, `no-streaming`, `no-model-flag`, `no-models-section`, `token-count-fails`, `help-garbage`, `error-help`.
 
 Commands that need no `fm` at all: `legend`, `validate <report.json>`, `export <report.json>`, `compare <a.json> <b.json>`, `history <dir>`, `--help`, `--version`.

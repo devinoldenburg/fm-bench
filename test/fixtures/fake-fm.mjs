@@ -81,8 +81,9 @@ function helpText() {
   const modelLines = models()
     .map((model) => `    ${model.name.padEnd(14)}${model.description}${model.name === 'system' ? ' (default)' : ''}`)
     .join('\n');
+  const modelsSection = scenario === 'no-models-section' ? '' : `\n  MODELS\n${modelLines}\n`;
 
-  return `\n Apple Foundation Models CLI\n\n  USAGE\n    % fm <command> [options]\n\n  COMMANDS\n${commandLines}\n\n  MODELS\n${modelLines}\n\n  Run 'fm <command> --help' for more information on a command.\n\n`;
+  return `\n Apple Foundation Models CLI\n\n  USAGE\n    % fm <command> [options]\n\n  COMMANDS\n${commandLines}\n${modelsSection}\n  Run 'fm <command> --help' for more information on a command.\n\n`;
 }
 
 function respondHelpText() {

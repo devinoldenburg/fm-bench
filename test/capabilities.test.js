@@ -155,3 +155,12 @@ test('parseModelsFromHelp does not invent cloud models', () => {
 `);
   assert.deepEqual(models.map((model) => model.name), ['system']);
 });
+
+test('detectFmCapabilities falls back to fm available when help has no MODELS section', async () => {
+  const capabilities = await detectFmCapabilities(fakeFmPath(), {
+    env: { ...process.env, FAKE_FM_SCENARIO: 'no-models-section' }
+  });
+  assert.equal(capabilities.ok, true);
+  assert.deepEqual(capabilities.models.map((model) => model.name), ['system']);
+  assert.deepEqual(capabilities.commands.includes('count-tokens'), true);
+});
