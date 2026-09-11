@@ -381,13 +381,22 @@ async function runSingleBenchmark(context) {
 
 async function runLimited(items, concurrency, worker, options = {}) {
   let nextIndex = 0;
+  // fail-fast stops admitting new work; calls already in flight are allowed to
+  // finish so no `fm` process is abandoned mid-run.
+  let cancelled = false;
   const waitForSlot = createPacer(options.requestRate, options.rampUpMs);
   const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
-    while (nextIndex < items.length) {
+    while (!cancelled && nextIndex < items.length) {
       const index = nextIndex;
       nextIndex += 1;
       await waitForSlot(index);
-      await worker(items[index]);
+      if (cancelled) break;
+      try {
+        await worker(items[index]);
+      } catch (error) {
+        cancelled = true;
+        throw error;
+      }
     }
   });
   await Promise.all(workers);

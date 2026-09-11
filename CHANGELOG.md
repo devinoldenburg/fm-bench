@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.2
+
+Reliability fixes found while re-auditing interruption and fail-fast behaviour; no change to metrics or the report schema.
+
+- **Ctrl+C now always exits with the interrupt status.** The exit timer was created unref'd, so an interrupt that hit while no `fm` child was running could still exit `0`. The status is now carried on the process and the exit is always performed explicitly (`130` for SIGINT, `143` for SIGTERM).
+- **`--fail-fast` stops admitting new work.** Previously the remaining queued jobs still ran after the first failure; now in-flight calls finish but the queue is not extended, so a 3-run benchmark with `--fail-fast` makes one `fm respond` call instead of three.
+- A follow-up benchmark error after an interrupt is no longer printed, so Ctrl+C output stays clean.
+- npm keywords broadened (`apple-intelligence`, `apple-silicon`, `llm`, `latency`, `throughput`, `benchmarking`) for discoverability.
+
 ## 0.7.1
 
 Internal release-verification fixes; no change to benchmark behaviour or the report schema.

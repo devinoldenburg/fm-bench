@@ -382,6 +382,10 @@ async function waitForPids(pidFile) {
   return [];
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function waitFor(predicate, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -417,4 +421,53 @@ test('a very short answer yields generation time but no noise-dominated decode r
   assert.equal(run.tpotMs, null, 'one output token cannot produce an inter-token interval');
   assert.equal(run.decodeTokensPerSecond, null);
   assert.equal(report.summary[0].tpot.avg, null);
+});
+
+test('SIGINT while fm-bench is still probing capabilities exits 130', async () => {
+  const child = spawn(process.execPath, [cliPath(), 'models', '--json'], {
+    env: { ...process.env, FM_BIN: fakeFmPath(), FAKE_FM_SCENARIO: 'hang-help' },
+    stdio: ['ignore', 'pipe', 'pipe']
+  });
+
+  await sleep(200);
+  child.kill('SIGINT');
+  const exit = await new Promise((resolve) => child.on('exit', (code, signal) => resolve({ code, signal })));
+
+  assert.equal(exit.code, 130, `expected 130 after SIGINT, got ${JSON.stringify(exit)}`);
+});
+
+test('SIGTERM exits 143 with the same cleanup guarantees', async () => {
+  const child = spawn(process.execPath, [cliPath(), 'models', '--json'], {
+    env: { ...process.env, FM_BIN: fakeFmPath(), FAKE_FM_SCENARIO: 'hang-help' },
+    stdio: ['ignore', 'pipe', 'pipe']
+  });
+
+  await sleep(200);
+  child.kill('SIGTERM');
+  const exit = await new Promise((resolve) => child.on('exit', (code, signal) => resolve({ code, signal })));
+
+  assert.equal(exit.code, 143, `expected 143 after SIGTERM, got ${JSON.stringify(exit)}`);
+});
+
+test('--fail-fast stops admitting new work instead of finishing the queue', async () => {
+  const countInvocations = (args) => {
+    const dir = tempDir();
+    const pidFile = join(dir, 'pids.txt');
+    // runCliWithFakeFm is synchronous, so the pid file is complete on return.
+    const result = runCliWithFakeFm([...args, '--json', '--no-progress'], 'fail', { env: { FAKE_FM_PID_FILE: pidFile } });
+    const invocations = readFileSync(pidFile, 'utf8').trim().split('\n').filter(Boolean).length;
+    return { invocations, result };
+  };
+
+  const plain = countInvocations(['--profile', 'quick', '--runs', '3']);
+  assert.equal(plain.result.code, 0, 'a failed run is data, not a CLI failure');
+  assert.equal(JSON.parse(plain.result.stdout).results.length, 3, 'all three runs are measured');
+
+  const fast = countInvocations(['--profile', 'quick', '--runs', '3', '--fail-fast']);
+  assert.equal(fast.result.code, 1, 'fail-fast surfaces the failure');
+  assert.match(fast.result.stderr, /The model failed to produce a response/);
+  assert.ok(fast.result.stdout === '', 'fail-fast prints no report');
+  // Three sequential respond calls become one; every other fm call is a probe
+  // or token count that happens before the queue, so the delta is exactly 2.
+  assert.equal(plain.invocations - fast.invocations, 2, `fail-fast made ${fast.invocations} fm calls vs ${plain.invocations}`);
 });

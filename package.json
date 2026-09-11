@@ -26,9 +26,15 @@
   },
   "keywords": [
     "apple",
+    "apple-intelligence",
+    "apple-silicon",
     "foundation-models",
     "fm",
+    "llm",
     "benchmark",
+    "benchmarking",
+    "latency",
+    "throughput",
     "macos",
     "cli"
   ],

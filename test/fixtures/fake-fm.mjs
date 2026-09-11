@@ -158,6 +158,11 @@ async function runRespond() {
 
 async function main() {
   if (args.includes('--help') && !command) {
+    if (scenario === 'hang-help') {
+      // Lets a test interrupt fm-bench while it is still probing capabilities.
+      await sleep(600_000);
+      process.exit(0);
+    }
     process.stdout.write(helpText());
     process.exit(0);
   }
