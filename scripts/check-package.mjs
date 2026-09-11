@@ -6,9 +6,12 @@
  */
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const root = join(import.meta.dirname, '..');
+// fileURLToPath keeps this working on Node 20.0-20.10, where
+// import.meta.dirname is not available yet.
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
 
 // --ignore-scripts: this script runs from `prepack`, so a nested pack that

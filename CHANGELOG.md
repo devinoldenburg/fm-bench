@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.1
+
+Internal release-verification fixes; no change to benchmark behaviour or the report schema.
+
+- **Release verification**: `npm run publish:dry-run` no longer fails simply because the current version is already on the registry. It verifies the tarball either way and only runs `npm publish --dry-run` for an unpublished version, so CI stays green on `main` after tagging (previously every push following a release failed this step).
+- `npm run publish:dry-run` now reports the packed file count and size, and fails when the bin entry, CLI entry point, README, or LICENSE is missing from the tarball.
+- `scripts/check-package.mjs` uses `fileURLToPath(import.meta.url)` instead of `import.meta.dirname`, which does not exist on Node 20.0–20.10 (the declared `engines` range starts at 20).
+
 ## 0.7.0
 
 Correctness release: `fm-bench` now probes the installed `fm` for its real capabilities, measures what that build can actually supply, and reports everything else as explicitly unavailable.
