@@ -19,6 +19,8 @@ Latest supported: macOS 27.0 or newer (fm is not available on older macOS releas
 
 The process exits with code `2`. This is deliberate: running on an unsupported macOS could never produce a valid benchmark, so the CLI fails fast with the exact version it found and the latest supported macOS version.
 
+The gate guards the **default** `fm` discovery path, because Apple only ships the CLI from macOS 27. If you explicitly provide a binary with `--fm-bin <path>` or `FM_BIN`, the host version is not a constraint and fm-bench proceeds on any platform — the capability probe still exits `2` if that binary is unusable.
+
 Commands that only read local report files — `compare`, `history`, `validate`, `export`, and `legend` — are not gated and work anywhere Node.js runs.
 
 `fm-bench doctor` still runs on unsupported hosts so you can diagnose the environment: it prints the detected macOS version, an explicit `macOS support` line, and the latest supported version.

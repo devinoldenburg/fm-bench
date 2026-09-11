@@ -18,6 +18,7 @@ Correctness release: `fm-bench` now probes the installed `fm` for its real capab
 - Models the build does not expose are rejected before a benchmark starts (`not supported by this fm build (supported: system)`), and raw `fm` argument-error/usage text never reaches user-facing output.
 - A benchmark with no usable model now fails fast with exit code `2` and an actionable message instead of printing an empty report.
 - Flags the build does not document (`--stream`, `--use-case`, `--guardrails`, `--instructions`, `--greedy`, `--model`) are no longer passed through blindly.
+- The macOS 27 gate now guards only the default `fm` discovery path: an explicitly supplied binary (`--fm-bin` or `FM_BIN`) is honoured on any host, and the error names that escape hatch.
 - New [docs/compatibility.md](docs/compatibility.md) documents the detection and capability policy plus the verified build.
 
 ### Report schema (still v1)

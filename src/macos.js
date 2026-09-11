@@ -57,7 +57,8 @@ export function evaluateMacosSupport(platform, parsed) {
 export function formatMacosRequirementError({ reason, latestSupported }) {
   return [
     `unsupported macOS: ${reason}`,
-    `Latest supported: ${latestSupported} (fm is not available on older macOS releases).`
+    `Latest supported: ${latestSupported} (fm is not available on older macOS releases).`,
+    'Pass --fm-bin <path> (or set FM_BIN) to benchmark an fm binary you provide on this host.'
   ].join('\n');
 }
 

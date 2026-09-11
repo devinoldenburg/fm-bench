@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseArgs, runCli } from '../src/cli.js';
+import { fakeFmPath } from './helpers.js';
 
 test('parseArgs supports repeated models and prompts', () => {
   const args = parseArgs(['--models', 'system,pcc', '--model', 'future', '--prompt', 'one', '--prompt', 'two']);
@@ -64,7 +65,7 @@ const swVers26 = async () => SW_VERS_26;
 
 test('runCli blocks benchmarks on macOS older than 27 and names the latest supported version', async () => {
   await assert.rejects(
-    () => runCli(['--profile', 'quick'], { platform: 'darwin', swVers: swVers26 }),
+    () => runCli(['--profile', 'quick'], { platform: 'darwin', swVers: swVers26, FM_BIN: '' }),
     (error) => {
       assert.match(error.message, /unsupported macOS/);
       assert.match(error.message, /detected macOS 26\.1/);
@@ -77,7 +78,7 @@ test('runCli blocks benchmarks on macOS older than 27 and names the latest suppo
 
 test('runCli blocks models on unsupported macOS', async () => {
   await assert.rejects(
-    () => runCli(['models'], { platform: 'darwin', swVers: swVers26 }),
+    () => runCli(['models'], { platform: 'darwin', swVers: swVers26, FM_BIN: '' }),
     (error) => {
       assert.equal(error.exitCode, 2);
       assert.match(error.message, /Latest supported/);
@@ -88,7 +89,7 @@ test('runCli blocks models on unsupported macOS', async () => {
 
 test('runCli blocks benchmarks on non-macOS platforms', async () => {
   await assert.rejects(
-    () => runCli(['--profile', 'quick'], { platform: 'linux', swVers: swVers26 }),
+    () => runCli(['--profile', 'quick'], { platform: 'linux', swVers: swVers26, FM_BIN: '' }),
     (error) => {
       assert.match(error.message, /only runs on macOS/);
       assert.equal(error.exitCode, 2);
@@ -98,7 +99,7 @@ test('runCli blocks benchmarks on non-macOS platforms', async () => {
 });
 
 test('runCli keeps offline commands usable on unsupported macOS', async () => {
-  await assert.doesNotReject(() => runCli(['legend', '--json'], { platform: 'darwin', swVers: swVers26 }));
+  await assert.doesNotReject(() => runCli(['legend', '--json'], { platform: 'darwin', swVers: swVers26, FM_BIN: '' }));
 });
 
 test('parseArgs reports usage errors with exit code 2', () => {
@@ -164,4 +165,34 @@ test('legend --json is usable with no fm and no network', async () => {
   const entries = JSON.parse(lines.join('\n'));
   assert.ok(entries.length > 10);
   assert.ok(entries.every((entry) => typeof entry.kind === 'string'));
+});
+
+test('an explicitly configured fm binary bypasses the macOS version gate', async () => {
+  // The fake fm stands in for a user-provided binary on a host too old for the
+  // preinstalled CLI, which is why the gate only guards the default path.
+  const original = console.log;
+  console.log = () => {};
+  try {
+    await assert.doesNotReject(() => runCli(
+      ['--profile', 'quick', '--runs', '1', '--no-progress', '--fm-bin', fakeFmPath(), '--json'],
+      { platform: 'darwin', swVers: swVers26, FM_BIN: '' }
+    ));
+    await assert.doesNotReject(() => runCli(
+      ['models', '--fm-bin', fakeFmPath()],
+      { platform: 'darwin', swVers: swVers26, FM_BIN: '' }
+    ));
+  } finally {
+    console.log = original;
+  }
+});
+
+test('the macOS gate still applies to the default fm path', async () => {
+  await assert.rejects(
+    () => runCli(['--profile', 'quick'], { platform: 'darwin', swVers: swVers26, FM_BIN: '' }),
+    (error) => {
+      assert.equal(error.exitCode, 2);
+      assert.match(error.message, /Pass --fm-bin/);
+      return true;
+    }
+  );
 });

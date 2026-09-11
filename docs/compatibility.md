@@ -35,6 +35,8 @@ Models the build does not list are refused before any benchmark starts, with the
 | `2` | Usage or environment error: unknown flag, missing argument, unsupported macOS, unusable `fm`, malformed report input, or `compare --strict` suite mismatch. |
 | `130` / `143` | Interrupted by SIGINT / SIGTERM. In-flight `fm` child processes are terminated first. |
 
+The macOS 27 requirement is enforced only when `fm-bench` resolves the default `fm` from `PATH`. Supplying `--fm-bin <path>` or `FM_BIN` lets the CLI run on any host and instead fails on the binary's actual capabilities (exit `2` when it exposes no usable commands).
+
 ## Verified builds
 
 | Platform | `fm` surface | Notes |

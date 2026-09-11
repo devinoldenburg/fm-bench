@@ -182,6 +182,11 @@ const SKIP_MACOS_GATE = new Set(['compare', 'history', 'validate', 'export', 'le
 async function assertSupportedMacos(parsed, env = {}) {
   if (SKIP_MACOS_GATE.has(parsed.command)) return;
 
+  // The gate guards the default fm discovery path, because Apple only ships the
+  // CLI from macOS 27. An explicitly configured binary is honoured on any host;
+  // the capability probe below still fails with exit 2 if it is unusable.
+  if (parsed.fmBin || env.FM_BIN || process.env.FM_BIN) return;
+
   const evaluation = evaluateMacosSupport(
     env.platform ?? process.platform,
     parseMacosVersion(await detectMacosVersion(env))
