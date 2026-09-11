@@ -15,14 +15,31 @@ env:
 
 jobs:
   test:
+    # macOS minutes cost 10x, so the matrix brackets the supported range
+    # (engines: node >=20) instead of testing every LTS in between.
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 24]
     runs-on: macos-15
+    name: node ${{ matrix.node }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci
-      - run: npm test
-      - run: npm run lint
-      - run: npm run publish:dry-run
+      - name: Lint, test, and verify package contents
+        run: npm run check
+      - name: CLI smoke tests
+        run: |
+          set -euo pipefail
+          node bin/fm-bench.js --version
+          node bin/fm-bench.js --help > /dev/null
+          node bin/fm-bench.js legend --json | node -e "const fs=require('fs');const entries=JSON.parse(fs.readFileSync(0,'utf8'));if(!Array.isArray(entries)||entries.length<10)throw new Error('legend --json output looks wrong')"
+          node bin/fm-bench.js doctor
+          # Machine formats must stay clean on stdout even without a real fm.
+          node bin/fm-bench.js models --format json > /dev/null
+      - name: Publish dry run
+        run: npm run publish:dry-run

@@ -33,8 +33,8 @@ jobs:
           cache: npm
 
       - run: npm ci
-      - run: npm test
-      - run: npm run lint
+      - name: Lint, test, and verify package contents
+        run: npm run check
 
       - name: Resolve release version
         id: version
@@ -59,15 +59,23 @@ jobs:
           fi
 
       - name: Publish to npm
+        id: npm
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
           ver="${{ steps.version.outputs.semver }}"
+          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
+            echo "::warning::NPM_TOKEN is not configured — skipping npm publish. The GitHub release still runs."
+            echo "status=skipped-no-token" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           if npm view "fm-bench@${ver}" version 2>/dev/null | grep -qx "$ver"; then
             echo "fm-bench@${ver} is already on npm — skipping publish."
+            echo "status=already-published" >> "$GITHUB_OUTPUT"
           else
             npm publish --access public --provenance
+            echo "status=published" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Create GitHub release
@@ -80,7 +88,11 @@ jobs:
           ver="${tag#v}"
           notes="$(node scripts/changelog-release-notes.mjs "$ver")"
           notes_file="$(mktemp)"
-          printf '%s' "$notes" > "$notes_file"
+          printf '%s' "$notes" >> "$notes_file"
+          printf '\n' >> "$notes_file"
+          if [ "${{ steps.npm.outputs.status }}" = "skipped-no-token" ]; then
+            printf '\nnpm publish status: skipped (NPM_TOKEN not configured in this repository).\n' >> "$notes_file"
+          fi
           if gh release view "$tag" >/dev/null 2>&1; then
             echo "GitHub release $tag already exists — updating notes from CHANGELOG.md."
             gh release edit "$tag" --notes-file "$notes_file" --title "$tag"

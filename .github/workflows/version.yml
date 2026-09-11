@@ -33,8 +33,8 @@ jobs:
           cache: npm
 
       - run: npm ci
-      - run: npm test
-      - run: npm run lint
+      - name: Lint, test, and verify package contents
+        run: npm run check
 
       - run: |
           git config user.name "github-actions[bot]"
